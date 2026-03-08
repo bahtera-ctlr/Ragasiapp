@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, useRef } from "react"
 import { supabase } from "@/lib/supabase";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 type Outlet = {
   id: string;
@@ -44,6 +46,16 @@ const outletRef = useRef<HTMLDivElement>(null)
 const [bulkText, setBulkText] = useState("");
 const [editingId, setEditingId] = useState<string | null>(null);
 const [editQty, setEditQty] = useState<number>(1);
+const [resultModal, setResultModal] = useState<{
+  type: "success" | "error";
+  title: string;
+  message?: string;
+  orderData?: {
+    outlet: Outlet;
+    items: CartItem[];
+    total: number;
+  };
+} | null>(null);
 
 
   // FETCH OUTLETS
@@ -358,13 +370,17 @@ function handleAddItem() {
   // SUBMIT ORDER
   async function handleSubmitOrder() {
   if (!selectedOutlet || cart.length === 0) {
-    alert("Outlet dan item harus diisi");
+    setResultModal({
+      type: "error",
+      title: "Data Tidak Lengkap",
+      message: "Pilih outlet dan tambahkan minimal 1 item ke keranjang"
+    });
     return;
   }
 
   const itemsPayload = cart.map((item) => ({
   product_id: item.product.id,
-  quantity: item.qty,  // ⬅️ GANTI INI
+  quantity: item.qty,
   price: item.product.price,
   discount: item.discount,
   subtotal:
@@ -381,16 +397,84 @@ function handleAddItem() {
 
   if (error) {
     console.error(error);
-    alert("Gagal post order");
+    setResultModal({
+      type: "error",
+      title: "Gagal Post Order",
+      message: error.message || "Terjadi kesalahan saat memproses order"
+    });
     return;
   }
 
-  alert("Order berhasil!");
+  // Store data sebelum clear
+  const orderData = {
+    outlet: selectedOutlet,
+    items: cart,
+    total: total
+  };
 
-setCart([]);
+  setResultModal({
+    type: "success",
+    title: "Order Berhasil!",
+    orderData: orderData
+  });
 
-await fetchProducts(); 
+  // Clear state setelah disimpan di modal
+  setTimeout(() => {
+    setCart([]);
+    setSelectedOutlet(null);
+    setProductSearch("");
+    setSelectedProduct(null);
+    setQty(1);
+  }, 100);
+
+  await fetchProducts();
 }
+
+  // DOWNLOAD INVOICE AS PDF
+  async function handleDownloadPDF() {
+    const invoiceElement = document.getElementById("invoice-content");
+    if (!invoiceElement) return;
+
+    try {
+      const canvas = await html2canvas(invoiceElement, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth - 20;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 10;
+
+      pdf.addImage(imgData, "PNG", 10, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight - 20;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + 10;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 10, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight - 20;
+      }
+
+      const fileName = `Invoice_${resultModal?.orderData?.outlet?.name}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      pdf.save(fileName);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      alert("Gagal download PDF");
+    }
+  }
 
 
   // TOTAL
@@ -605,9 +689,9 @@ console.log("FILTERED:", filteredProducts.length);
 
   return (
     <div
-      key={item.product.id}   // 🔥 GANTI key
+      key={index}
       className="border border-gray-300 p-4 rounded-lg bg-gray-50 flex justify-between items-center"
-        >
+    >
       <div>
         <div className="font-semibold">
           {item.product.name} x {item.qty}
@@ -625,13 +709,13 @@ console.log("FILTERED:", filteredProducts.length);
             setEditingId(item.product.id);
             setEditQty(item.qty);
           }}
-          className="relative z-50 pointer-events-auto text-blue-600 font-semibold mr-4"
+          className="text-blue-600 font-semibold hover:underline"
         >
           Edit
         </button>
         <button
           onClick={() => handleRemove(index)}
-          className="text-red-600 font-semibold"
+          className="text-red-600 font-semibold hover:underline"
         >
           Hapus
         </button>
@@ -639,6 +723,71 @@ console.log("FILTERED:", filteredProducts.length);
     </div>
   );
 })}
+
+{/* EDIT MODAL */}
+{editingId && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-lg p-6 w-96 shadow-xl">
+      <h2 className="text-xl font-bold mb-4">Edit Item</h2>
+      
+      {cart.find((item) => item.product.id === editingId) && (
+        <div className="space-y-4">
+          <div>
+            <label className="block font-semibold mb-2">Nama Produk:</label>
+            <div className="p-3 bg-gray-100 rounded-lg border border-gray-300">
+              {cart.find((item) => item.product.id === editingId)?.product.name}
+            </div>
+          </div>
+
+          <div>
+            <label className="block font-semibold mb-2">Harga (Rp):</label>
+            <div className="p-3 bg-gray-100 rounded-lg border border-gray-300">
+              {cart.find((item) => item.product.id === editingId)?.product.price.toLocaleString()}
+            </div>
+          </div>
+
+          <div>
+            <label className="block font-semibold mb-2">Quantity:</label>
+            <input
+              type="number"
+              min="1"
+              value={editQty}
+              onChange={(e) => setEditQty(Number(e.target.value))}
+              className="w-full border border-gray-300 rounded-lg p-3 text-lg"
+            />
+          </div>
+
+          <div>
+            <label className="block font-semibold mb-2">Diskon:</label>
+            <div className="p-3 bg-gray-100 rounded-lg border border-gray-300">
+              {cart.find((item) => item.product.id === editingId)?.discount}%
+            </div>
+          </div>
+
+          <div className="flex gap-3 mt-6">
+            <button
+              onClick={() => {
+                const item = cart.find((item) => item.product.id === editingId);
+                if (item) {
+                  handleSaveEdit(item.product);
+                }
+              }}
+              className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-semibold"
+            >
+              Simpan
+            </button>
+            <button
+              onClick={() => setEditingId(null)}
+              className="flex-1 bg-gray-400 text-white px-4 py-2 rounded-lg hover:bg-gray-500 font-semibold"
+            >
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+)}
 
 {/* TOTAL */}
 <div className="text-xl font-bold space-y-4">
@@ -652,6 +801,149 @@ console.log("FILTERED:", filteredProducts.length);
     Post Order
   </button>
 </div>
+
+{/* ERROR MODAL */}
+{resultModal?.type === "error" && (
+  <div className="fixed inset-0 flex items-center justify-center z-50" style={{backgroundColor: 'rgba(0, 0, 0, 0.3)'}}>
+    <div className="bg-white rounded-lg p-8 w-96 shadow-xl">
+      <div className="mb-4">
+        <div className="text-red-600 text-5xl mb-4 text-center">⚠️</div>
+        <h2 className="text-2xl font-bold text-red-600 text-center">{resultModal.title}</h2>
+      </div>
+      
+      {resultModal.message && (
+        <p className="text-gray-700 mb-6 text-center text-lg leading-relaxed">
+          {resultModal.message}
+        </p>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          onClick={() => setResultModal(null)}
+          className="flex-1 bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700 font-semibold"
+        >
+          Tutup
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+{/* SUCCESS MODAL - INVOICE */}
+{resultModal?.type === "success" && (
+  <div className="fixed inset-0 flex items-center justify-center z-50" style={{backgroundColor: 'rgba(0, 0, 0, 0.3)'}}>
+    <div id="invoice-content" className="bg-white rounded-lg p-8 w-full max-w-2xl shadow-xl max-h-96 overflow-y-auto">
+      <div className="mb-6">
+        <div className="text-green-600 text-5xl mb-4 text-center">✓</div>
+        <h2 className="text-2xl font-bold text-green-600 text-center">{resultModal.title}</h2>
+      </div>
+
+      {/* Invoice Content */}
+      <div className="bg-gray-50 p-6 rounded-lg mb-6">
+        {/* Outlet Info */}
+        <div className="mb-6 pb-4 border-b-2 border-gray-300">
+          <h3 className="font-bold text-lg text-gray-800 mb-2">Informasi Outlet</h3>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-gray-600">Nama Outlet:</span>
+              <div className="font-semibold text-gray-800">{resultModal?.orderData?.outlet?.name}</div>
+            </div>
+            <div>
+              <span className="text-gray-600">Cluster:</span>
+              <div className="font-semibold text-gray-800">{resultModal?.orderData?.outlet?.cluster}</div>
+            </div>
+            <div>
+              <span className="text-gray-600">Tempo:</span>
+              <div className="font-semibold text-gray-800">{resultModal?.orderData?.outlet?.tempo} hari</div>
+            </div>
+            <div>
+              <span className="text-gray-600">ME:</span>
+              <div className="font-semibold text-gray-800">{resultModal?.orderData?.outlet?.me || "-"}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Items Detail */}
+        <div className="mb-6">
+          <h3 className="font-bold text-lg text-gray-800 mb-3">Detail Produk</h3>
+          <div className="space-y-3">
+            {resultModal?.orderData?.items?.map((item, index) => {
+              const priceAfterDiscount =
+                item.product.price * (1 - item.discount / 100);
+              const subtotal = priceAfterDiscount * item.qty;
+
+              return (
+                <div key={index} className="bg-white p-4 rounded border border-gray-200 mb-3">
+                  <div className="flex justify-between items-start mb-3 pb-3 border-b border-gray-100">
+                    <div>
+                      <div className="font-bold text-gray-800 text-base">{item.product.name}</div>
+                      <div className="text-sm text-gray-600 mt-1">
+                        Gol: <span className="font-semibold">{item.product.gol || "-"}</span>
+                      </div>
+                    </div>
+                    <div className="text-right bg-blue-50 px-3 py-1 rounded">
+                      <div className="text-lg font-bold text-blue-600">{item.qty}</div>
+                      <div className="text-xs text-gray-600">unit</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-xs text-gray-600 mb-1">Harga Jual Retail</div>
+                      <div className="font-bold text-gray-800">
+                        Rp {item.product.price.toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600 mb-1">Diskon</div>
+                      <div className="font-bold text-red-600">{item.discount}%</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600 mb-1">Harga Bersih / Unit</div>
+                      <div className="font-bold text-gray-800">
+                        Rp {priceAfterDiscount.toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600 mb-1">Subtotal</div>
+                      <div className="font-bold text-green-600 text-lg">
+                        Rp {subtotal.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Total */}
+        <div className="bg-green-100 p-4 rounded-lg border-2 border-green-600">
+          <div className="text-center">
+            <div className="text-gray-700 font-semibold mb-1">TOTAL ORDER</div>
+            <div className="text-3xl font-bold text-green-600">
+              Rp {resultModal?.orderData?.total?.toLocaleString()}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-3 mt-6">
+        <button
+          onClick={handleDownloadPDF}
+          className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 font-semibold flex items-center justify-center gap-2"
+        >
+          📥 Download PDF
+        </button>
+        <button
+          onClick={() => setResultModal(null)}
+          className="flex-1 bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 font-semibold"
+        >
+          Tutup
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       </div>
     </div>
   );
