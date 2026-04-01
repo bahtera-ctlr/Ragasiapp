@@ -1,18 +1,44 @@
 import { supabase } from './supabase';
 
-// GET ALL OUTLETS
+// GET ALL OUTLETS - WITH PAGINATION TO BYPASS 1000 LIMIT
 export async function getOutlets() {
   try {
-    const { data, error } = await supabase
-      .from('outlets')
-      .select('*')
-      .order('name', { ascending: true });
+    let allData: any[] = [];
+    let pageSize = 1000;
+    let page = 0;
+    let hasMore = true;
 
-    if (error) {
-      return { error: error.message, data: null };
+    // Fetch semua data dengan pagination
+    while (hasMore) {
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+
+      const { data, error, count } = await supabase
+        .from('outlets')
+        .select('*', { count: 'exact' })
+        .range(from, to)
+        .order('name', { ascending: true });
+
+      if (error) {
+        return { error: error.message, data: null };
+      }
+
+      if (!data || data.length === 0) {
+        hasMore = false;
+      } else {
+        allData = [...allData, ...data];
+        console.log(`📊 Fetched page ${page + 1}: ${data.length} outlets (total so far: ${allData.length})`);
+        
+        // Check if we got all
+        if (count && allData.length >= count) {
+          hasMore = false;
+        }
+        page++;
+      }
     }
 
-    return { data, error: null };
+    console.log(`📊 getOutlets: Total fetched ${allData.length} outlets`);
+    return { data: allData, error: null };
   } catch (error) {
     return { error: String(error), data: null };
   }

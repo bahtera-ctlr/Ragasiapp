@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { logOut } from '@/lib/auth';
 import { getOutlets, exportOutletsToCSV } from '@/lib/export';
+import { uploadOutletData } from '@/lib/outlets';
 import { getInvoices, releaseInvoice, rejectInvoice } from '@/lib/orders';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
@@ -16,12 +17,21 @@ export default function AdminKeuanganDashboard() {
 
   const [outlets, setOutlets] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
-  const [tab, setTab] = useState<'outlets' | 'invoices'>('outlets');
+  const [tab, setTab] = useState<'outlets' | 'outlet-import' | 'invoices'>('outlets');
   const [isExporting, setIsExporting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [releaseSuccess, setReleaseSuccess] = useState<string | null>(null);
+  
+  // Search states
+  const [outletSearchQuery, setOutletSearchQuery] = useState('');
+  const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
+  
+  // Outlet import states
+  const [outletUploading, setOutletUploading] = useState(false);
+  const [outletUploadError, setOutletUploadError] = useState<string | null>(null);
+  const [outletUploadSuccess, setOutletUploadSuccess] = useState<string | null>(null);
   
   // Modal state
   const [showDecisionModal, setShowDecisionModal] = useState(false);
@@ -85,6 +95,35 @@ export default function AdminKeuanganDashboard() {
       alert('Gagal export file');
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleOutletFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setOutletUploading(true);
+    setOutletUploadError(null);
+    setOutletUploadSuccess(null);
+
+    try {
+      const text = await file.text();
+      const result = await uploadOutletData(text);
+      
+      setOutletUploadSuccess(`✓ Berhasil upload ${result.count} outlet!`);
+      
+      // Refresh data
+      setTimeout(() => {
+        fetchData();
+      }, 500);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      setOutletUploadError(errorMsg);
+      console.error('Upload error:', error);
+    } finally {
+      setOutletUploading(false);
+      // Reset file input
+      event.target.value = '';
     }
   };
 
@@ -223,6 +262,32 @@ Generated: ${new Date().toLocaleString('id-ID')}
     URL.revokeObjectURL(url);
   };
 
+  // Filter outlets based on search query
+  const filteredOutlets = outlets.filter(outlet => {
+    const query = outletSearchQuery.toLowerCase().trim();
+    if (!query) return true;
+    
+    return (
+      (outlet.nio?.toString().toLowerCase().includes(query)) ||
+      (outlet.name?.toLowerCase().includes(query)) ||
+      (outlet.cluster?.toLowerCase().includes(query)) ||
+      (outlet.me?.toLowerCase().includes(query))
+    );
+  });
+
+  // Filter invoices based on search query
+  const filteredInvoices = invoices.filter(invoice => {
+    const query = invoiceSearchQuery.toLowerCase().trim();
+    if (!query) return true;
+    
+    return (
+      (invoice.order_id?.toLowerCase().includes(query)) ||
+      (invoice.invoice_number?.toLowerCase().includes(query)) ||
+      (invoice.outlet?.name?.toLowerCase().includes(query)) ||
+      (invoice.outlet?.NIO?.toString().includes(query))
+    );
+  });
+
   const handleLogout = async () => {
     await logOut();
     router.push('/');
@@ -261,6 +326,8 @@ Generated: ${new Date().toLocaleString('id-ID')}
           <button
             onClick={() => {
               setTab('outlets');
+              setOutletSearchQuery('');
+              setInvoiceSearchQuery('');
               fetchData();
             }}
             className={`py-2 px-4 rounded-lg font-medium transition-colors ${
@@ -273,7 +340,23 @@ Generated: ${new Date().toLocaleString('id-ID')}
           </button>
           <button
             onClick={() => {
+              setTab('outlet-import');
+              setOutletSearchQuery('');
+              setInvoiceSearchQuery('');
+            }}
+            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
+              tab === 'outlet-import'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            📥 Import Outlet
+          </button>
+          <button
+            onClick={() => {
               setTab('invoices');
+              setOutletSearchQuery('');
+              setInvoiceSearchQuery('');
               fetchData();
             }}
             className={`py-2 px-4 rounded-lg font-medium transition-colors ${
@@ -291,7 +374,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
           <div>
             <PageHeader
               title="Data Outlet"
-              subtitle={`Total: ${outlets.length} outlet`}
+              subtitle={`Total: ${outlets.length} outlet${outletSearchQuery ? ` (${filteredOutlets.length} hasil pencarian)` : ''}`}
             >
               <button
                 onClick={handleExportOutlets}
@@ -302,16 +385,30 @@ Generated: ${new Date().toLocaleString('id-ID')}
               </button>
             </PageHeader>
 
+            {/* Search Bar */}
+            <div className="mb-6">
+              <input
+                type="text"
+                placeholder="🔍 Cari berdasarkan NIO, Nama Outlet, Cluster, atau ME..."
+                value={outletSearchQuery}
+                onChange={(e) => setOutletSearchQuery(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+
             {isLoading ? (
               <div className="text-center py-8 text-gray-400">Loading...</div>
             ) : outlets.length === 0 ? (
               <div className="text-center py-8 text-gray-400">Tidak ada data outlet</div>
+            ) : filteredOutlets.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">Tidak ada outlet yang cocok dengan pencarian</div>
             ) : (
               <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
                       <tr className="bg-gray-800 border-b border-gray-700">
+                        <th className="px-6 py-3 text-left text-sm font-medium">NIO</th>
                         <th className="px-6 py-3 text-left text-sm font-medium">Nama</th>
                         <th className="px-6 py-3 text-left text-sm font-medium">Cluster</th>
                         <th className="px-6 py-3 text-left text-sm font-medium">Tempo</th>
@@ -320,12 +417,13 @@ Generated: ${new Date().toLocaleString('id-ID')}
                       </tr>
                     </thead>
                     <tbody>
-                      {outlets.map((outlet) => (
+                      {filteredOutlets.map((outlet) => (
                         <tr key={outlet.id} className="border-b border-gray-700 hover:bg-gray-800">
+                          <td className="px-6 py-4 text-sm font-mono">{outlet.nio || '-'}</td>
                           <td className="px-6 py-4 text-sm">{outlet.name}</td>
                           <td className="px-6 py-4 text-sm">{outlet.cluster || '-'}</td>
-                          <td className="px-6 py-4 text-sm">{outlet.tempo || '-'} hari</td>
-                          <td className="px-6 py-4 text-sm">Rp {outlet.credit_limit?.toLocaleString('id-ID') || '-'}</td>
+                          <td className="px-6 py-4 text-sm">{outlet.top_hari || '-'} hari</td>
+                          <td className="px-6 py-4 text-sm">Rp {outlet.limit_rupiah?.toLocaleString('id-ID') || '-'}</td>
                           <td className="px-6 py-4 text-sm">Rp {outlet.current_saldo?.toLocaleString('id-ID') || '-'}</td>
                         </tr>
                       ))}
@@ -337,21 +435,99 @@ Generated: ${new Date().toLocaleString('id-ID')}
           </div>
         )}
 
+        {/* Outlet Import Tab */}
+        {tab === 'outlet-import' && (
+          <div>
+            <PageHeader
+              title="Import Data Outlet"
+              subtitle="Upload file CSV untuk update data outlet"
+            />
+
+            {/* Upload Section */}
+            <div className="bg-gray-900 border-2 border-dashed border-gray-700 rounded-lg p-8 mb-6">
+              <div className="text-center">
+                <p className="text-lg font-semibold mb-4">Upload Data Outlet</p>
+                <p className="text-sm text-gray-400 mb-6">
+                  Format CSV: NIO, NAMA OUTLET, ME, CLUSTER, KELOMPOK, LIMIT, TOP, SALDO<br/>
+                  <span className="text-xs text-gray-500 mt-2 block">
+                    NIO = Nomor Identifikasi Outlet (wajib unik)<br/>
+                    LIMIT = Limit dalam rupiah (contoh: 1000000 atau 1.000.000)<br/>
+                    TOP = Tempo pembayaran dalam hari (contoh: 30)<br/>
+                    SALDO = Sisa saldo dalam rupiah (contoh: 500000)
+                  </span>
+                  <span className="text-xs text-yellow-500 mt-3 block">⚠️ Data lama akan otomatis dihapus saat upload data baru</span>
+                </p>
+                
+                <label className="inline-block">
+                  <input
+                    type="file"
+                    accept=".csv,.txt"
+                    onChange={handleOutletFileUpload}
+                    disabled={outletUploading}
+                    className="hidden"
+                  />
+                  <span className={`inline-block px-6 py-3 rounded font-semibold cursor-pointer transition-colors ${
+                    outletUploading
+                      ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}>
+                    {outletUploading ? '⏳ Uploading...' : '📤 Pilih File CSV'}
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            {outletUploadError && (
+              <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded mb-4 text-sm">
+                {outletUploadError}
+              </div>
+            )}
+
+            {outletUploadSuccess && (
+              <div className="bg-green-900 border border-green-700 text-green-200 px-4 py-3 rounded mb-4 text-sm">
+                {outletUploadSuccess}
+              </div>
+            )}
+
+            {/* Current Outlets Info */}
+            <div className="bg-gray-900 rounded-lg border border-gray-800 p-6">
+              <h3 className="text-lg font-semibold mb-4">Status Outlets Saat Ini</h3>
+              <p className="text-gray-400">Total outlet: <span className="text-white font-bold">{outlets.length}</span></p>
+              <p className="text-xs text-gray-500 mt-4">
+                ℹ️ Setelah upload CSV, refresh halaman atau klik tab lain untuk melihat data outlet terbaru.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Invoices Tab */}
         {tab === 'invoices' && (
           <div>
             <PageHeader
               title="Invoice Management"
-              subtitle={`Total: ${invoices.length} invoice`}
+              subtitle={`Total: ${invoices.length} invoice${invoiceSearchQuery ? ` (${filteredInvoices.length} hasil pencarian)` : ''}`}
             />
+
+            {/* Search Bar */}
+            <div className="mb-6">
+              <input
+                type="text"
+                placeholder="🔍 Cari berdasarkan Invoice Number, Order ID, Nama Outlet, atau NIO..."
+                value={invoiceSearchQuery}
+                onChange={(e) => setInvoiceSearchQuery(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
 
             {isLoading ? (
               <div className="text-center py-8 text-gray-400">Loading...</div>
             ) : invoices.length === 0 ? (
               <div className="text-center py-8 text-gray-400">Tidak ada data invoice</div>
+            ) : filteredInvoices.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">Tidak ada invoice yang cocok dengan pencarian</div>
             ) : (
               <div className="space-y-4">
-                {invoices.map((invoice) => {
+                {filteredInvoices.map((invoice) => {
                   // Use order created_at if available, otherwise use invoice created_at
                   const orderDate = invoice.orders?.created_at || invoice.created_at;
                   const createdDate = new Date(orderDate);
