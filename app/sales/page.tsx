@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react"
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -25,13 +26,17 @@ type Product = {
 };
 
 type CartItem = {
-  product: Product;
+  product: Product | null;
+  customName?: string;
+  customPrice?: number;
   qty: number;
   discount: number;
   subtotal: number;
+  isCustom?: boolean;
 };
 
 export default function SalesPage() {
+  const router = useRouter();
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedOutlet, setSelectedOutlet] = useState<Outlet | null>(null);
@@ -43,9 +48,20 @@ const [productSearch, setProductSearch] = useState("");
 const [showOutletDropdown, setShowOutletDropdown] = useState(false);
 const [showProductDropdown, setShowProductDropdown] = useState(false);
 const outletRef = useRef<HTMLDivElement>(null)
+const invoiceRef = useRef<HTMLDivElement>(null);
 const [bulkText, setBulkText] = useState("");
 const [editingId, setEditingId] = useState<string | null>(null);
 const [editQty, setEditQty] = useState<number>(1);
+const [editDiscount, setEditDiscount] = useState<number>(0);
+const [editProduct, setEditProduct] = useState<Product | null>(null);
+const [editProductSearch, setEditProductSearch] = useState("");
+const [showEditProductDropdown, setShowEditProductDropdown] = useState(false);
+const [editCustomName, setEditCustomName] = useState("");
+const [editCustomPrice, setEditCustomPrice] = useState<number>(0);
+const [notification, setNotification] = useState<{
+  message: string;
+  type: "success" | "error" | "info";
+} | null>(null);
 const [resultModal, setResultModal] = useState<{
   type: "success" | "error";
   title: string;
@@ -102,8 +118,8 @@ const [resultModal, setResultModal] = useState<{
     while (!done) {
       const { data, error } = await supabase
         .from("products")
-        .select("id, name, price, stock, gol, komposisi")
-        .order("name", { ascending: true })
+        .select("id, nama_barang, harga_jual_ragasi, stok, golongan_barang, komposisi")
+        .order("nama_barang", { ascending: true })
         .range(from, from + batchSize - 1);
 
       if (error) {
@@ -113,7 +129,16 @@ const [resultModal, setResultModal] = useState<{
 }
 
       if (data && data.length > 0) {
-        allProducts = [...allProducts, ...data];
+        // Map database field names to Product type field names
+        const mappedData: Product[] = data.map((item: any) => ({
+          id: item.id,
+          name: item.nama_barang,
+          price: item.harga_jual_ragasi,
+          stock: item.stok,
+          gol: item.golongan_barang,
+          komposisi: item.komposisi,
+        }));
+        allProducts = [...allProducts, ...mappedData];
         from += batchSize;
       } else {
         done = true;
@@ -184,6 +209,10 @@ const [resultModal, setResultModal] = useState<{
 }
 
 function handleSelectProduct(product: Product) {
+  if (product.stock === 0) {
+    showNotification("Produk ini stoknya kosong dan tidak bisa dipesan", "error");
+    return;
+  }
   setSelectedProduct(product);
   setProductSearch(product.name);
   setShowProductDropdown(false);
@@ -191,7 +220,7 @@ function handleSelectProduct(product: Product) {
 
 function handleBulkAdd() {
   if (!selectedOutlet) {
-    alert("Pilih outlet terlebih dahulu");
+    showNotification("Pilih outlet terlebih dahulu", "error");
     return;
   }
 
@@ -200,7 +229,8 @@ function handleBulkAdd() {
     .map((l) => l.replace(/•/g, "").trim())
     .filter((l) => l.length > 0 && !l.toLowerCase().includes("list"));
 
-  const notFound: string[] = [];
+  const notFound: { name: string; qty: number }[] = [];
+  let successCount = 0;
 
   lines.forEach((line) => {
     // Cari angka pertama dalam kalimat
@@ -213,63 +243,77 @@ function handleBulkAdd() {
     // Nama produk = semua sebelum angka
     const productName = line
       .split(qtyMatch[0])[0]
-      .trim()
-      .toLowerCase();
+      .trim();
 
     // Cari produk dengan includes
     const found = products.find((p) =>
-      p.name.toLowerCase().includes(productName)
+      p.name.toLowerCase().includes(productName.toLowerCase())
     );
 
     if (found) {
       setCart((prev) => {
         // Jika produk sudah ada di cart → tambahkan qty
         const existing = prev.find(
-          (item) => item.product.id === found.id
+          (item) => !item.isCustom && item.product && item.product.id === found.id
         );
 
         if (existing) {
           return prev.map((item) =>
-            item.product.id === found.id
+            !item.isCustom && item.product && item.product.id === found.id
               ? {
                   ...item,
                   qty: item.qty + qty,
-                  subtotal: (item.qty + qty) * item.product.price,
+                  subtotal: (item.qty + qty) * (item.product?.price || 0),
                 }
               : item
           );
         }
-const discount = getDiscount(
-  selectedOutlet.cluster,
-  found,
-  qty
-);
+        const discount = getDiscount(
+          selectedOutlet.cluster,
+          found,
+          qty
+        );
 
-const subtotal =
-  qty *
-  (found.price -
-    (found.price * discount) / 100);
+        const subtotal =
+          qty *
+          (found.price -
+            (found.price * discount) / 100);
 
-return [
-  ...prev,
-  {
-    product: found,
-    qty,
-    discount,
-    subtotal,
-  },
-];
-  
+        return [
+          ...prev,
+          {
+            product: found,
+            qty,
+            discount,
+            subtotal,
+          },
+        ];
       });
+      successCount++;
     } else {
-      notFound.push(line);
+      notFound.push({ name: productName, qty });
     }
   });
 
+  // Auto-add item yang tidak ditemukan sebagai custom item
   if (notFound.length > 0) {
-    alert(
-      "Produk tidak ditemukan:\n\n" + notFound.join("\n")
-    );
+    setCart((prev) => {
+      const customItems = notFound.map((item) => ({
+        product: null,
+        customName: `${item.name} (Tidak Tersedia)`,
+        customPrice: 0,
+        qty: item.qty,
+        discount: 0,
+        subtotal: 0,
+        isCustom: true,
+      }));
+      return [...prev, ...customItems];
+    });
+    showNotification(`${notFound.length} item tidak tersedia dan masuk ke 'Recap Barang Kosong'`, "info");
+  }
+
+  if (successCount > 0) {
+    showNotification(`${successCount} item berhasil ditambahkan ke keranjang`, "success");
   }
 
   setBulkText("");
@@ -278,10 +322,12 @@ return [
 function handleAddItem() {
   if (!selectedProduct || !selectedOutlet) return;
 
+  let isAdded = false;
+
   setCart((prev) => {
     const existing = prev.find(
-  (item) => item.product.id === selectedProduct.id
-);
+      (item) => !item.isCustom && item.product && item.product.id === selectedProduct.id
+    );
 
     const discount = getDiscount(
       selectedOutlet.cluster,
@@ -304,7 +350,7 @@ function handleAddItem() {
           (selectedProduct.price * newDiscount) / 100);
 
       return prev.map((item) =>
-        item.product.id === selectedProduct.id
+        !item.isCustom && item.product && item.product.id === selectedProduct.id
           ? {
               ...item,
               qty: newQty,
@@ -315,6 +361,7 @@ function handleAddItem() {
       );
     }
 
+    isAdded = true;
     const subtotal =
       qty *
       (selectedProduct.price -
@@ -330,8 +377,18 @@ function handleAddItem() {
       },
     ];
   });
+
+  showNotification(`${selectedProduct.name} berhasil ditambahkan ke keranjang`, "success");
+  setQty(1);
+  setSelectedProduct(null);
+  setProductSearch("");
 }
 
+  // SHOW NOTIFICATION
+  function showNotification(message: string, type: "success" | "error" | "info" = "success") {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  }
 
   // REMOVE ITEM
   function handleRemove(index: number) {
@@ -339,33 +396,80 @@ function handleAddItem() {
   }
 
   // SAVE EDIT
-  function handleSaveEdit(product: any) {
-  setCart((prev) =>
-    prev.map((item) => {
-      if (item.product.id !== product.id) return item;
+  function handleSaveEdit(index: number) {
+    const currentItem = cart[index];
+    if (!currentItem) return;
 
-      const discount = getDiscount(
-        selectedOutlet?.cluster || null,
-        product,
-        editQty
+    // Jika custom item yang di-convert ke regular (dipilih dari dropdown)
+    if (currentItem.isCustom && editProduct) {
+      const subtotal =
+        editQty *
+        (editProduct.price -
+          (editProduct.price * editDiscount) / 100);
+
+      setCart((prev) =>
+        prev.map((item, i) =>
+          i === index
+            ? {
+                product: editProduct,
+                qty: editQty,
+                discount: editDiscount,
+                subtotal,
+                isCustom: false,
+              }
+            : item
+        )
       );
+    }
+    // Jika custom item yang tetap custom (manual input)
+    else if (currentItem.isCustom && !editProduct) {
+      const subtotal = (editCustomPrice || 0) * editQty;
+      setCart((prev) =>
+        prev.map((item, i) =>
+          i === index
+            ? {
+                ...item,
+                customName: editCustomName || item.customName,
+                customPrice: editCustomPrice || item.customPrice,
+                qty: editQty,
+                subtotal,
+              }
+            : item
+        )
+      );
+    }
+    // Jika produk regular
+    else {
+      const selectedProductForEdit = editProduct || currentItem.product;
+      if (!selectedProductForEdit) return;
 
       const subtotal =
         editQty *
-        (product.price -
-          (product.price * discount) / 100);
+        (selectedProductForEdit.price -
+          (selectedProductForEdit.price * editDiscount) / 100);
 
-      return {
-        ...item,
-        qty: editQty,
-        discount,
-        subtotal,
-      };
-    })
-  );
+      setCart((prev) =>
+        prev.map((item, i) =>
+          i === index
+            ? {
+                product: selectedProductForEdit,
+                qty: editQty,
+                discount: editDiscount,
+                subtotal,
+              }
+            : item
+        )
+      );
+    }
 
-  setEditingId(null);
-}
+    setEditingId(null);
+    setEditProduct(null);
+    setEditProductSearch("");
+    setEditQty(1);
+    setEditDiscount(0);
+    setEditCustomName("");
+    setEditCustomPrice(0);
+  }
 
   // SUBMIT ORDER
   async function handleSubmitOrder() {
@@ -379,17 +483,16 @@ function handleAddItem() {
   }
 
   const itemsPayload = cart.map((item) => ({
-  product_id: item.product.id,
-  quantity: item.qty,
-  price: item.product.price,
-  discount: item.discount,
-  subtotal:
-    item.product.price *
-    item.qty *
-    (1 - item.discount / 100),
-}));
+    product_id: item.product?.id || null,
+    product_name: item.isCustom ? item.customName : item.product?.name,
+    quantity: item.qty,
+    price: item.isCustom ? item.customPrice : item.product?.price,
+    discount: item.discount,
+    is_custom: item.isCustom || false,
+    subtotal: item.subtotal,
+  }));
 
-  const { error } = await supabase.rpc("create_sales_order", {
+  const { error } = await supabase.rpc("create_sales_order_v2", {
     p_outlet_id: selectedOutlet.id,
     p_total: total,
     p_items: itemsPayload,
@@ -397,10 +500,20 @@ function handleAddItem() {
 
   if (error) {
     console.error(error);
+    let errorMessage = error.message || "Terjadi kesalahan saat memproses order";
+    
+    // Parse error message untuk lebih readable
+    if (errorMessage.includes("Stok tidak mencukupi")) {
+      errorMessage = errorMessage.replace(/UUID \(([^)]+)\)/, (match, uuid) => {
+        const product = cart.find(item => item.product?.id === uuid);
+        return product ? product.product?.name || uuid : uuid;
+      });
+    }
+    
     setResultModal({
       type: "error",
       title: "Gagal Post Order",
-      message: error.message || "Terjadi kesalahan saat memproses order"
+      message: errorMessage
     });
     return;
   }
@@ -431,19 +544,14 @@ function handleAddItem() {
 }
 
   // DOWNLOAD INVOICE AS PDF
-  async function handleDownloadPDF() {
-    const invoiceElement = document.getElementById("invoice-content");
-    if (!invoiceElement) return;
+  function handleDownloadPDF() {
+    if (!resultModal?.orderData) return;
 
     try {
-      const canvas = await html2canvas(invoiceElement, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-      });
+      const outlet = resultModal.orderData.outlet;
+      const items = resultModal.orderData.items;
+      const total = resultModal.orderData.total;
 
-      const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({
         orientation: "portrait",
         unit: "mm",
@@ -451,37 +559,170 @@ function handleAddItem() {
       });
 
       const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth - 20;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let yPosition = 20;
+      const margin = 15;
+      const contentWidth = pageWidth - 2 * margin;
+      const lineHeight = 7;
 
-      let heightLeft = imgHeight;
-      let position = 10;
+      // Title
+      pdf.setFontSize(16);
+      pdf.setFont("", "bold");
+      pdf.text("SALES ORDER INVOICE", margin, yPosition);
+      yPosition += lineHeight + 5;
 
-      pdf.addImage(imgData, "PNG", 10, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight - 20;
+      // Date
+      pdf.setFontSize(10);
+      pdf.setFont("", "normal");
+      pdf.text(`Tanggal: ${new Date().toLocaleDateString("id-ID")}`, margin, yPosition);
+      yPosition += lineHeight + 5;
 
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight + 10;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 10, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight - 20;
+      // Separator
+      pdf.setDrawColor(0);
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 5;
+
+      // Outlet Info
+      pdf.setFontSize(11);
+      pdf.setFont("", "bold");
+      pdf.text("INFORMASI OUTLET", margin, yPosition);
+      yPosition += lineHeight + 2;
+
+      pdf.setFontSize(10);
+      pdf.setFont("", "normal");
+      pdf.text(`Nama Outlet: ${outlet.name}`, margin, yPosition);
+      yPosition += lineHeight;
+      pdf.text(`Tempo: ${outlet.tempo} hari`, margin, yPosition);
+      yPosition += lineHeight;
+      if (outlet.cluster) {
+        pdf.text(`Cluster: ${outlet.cluster}`, margin, yPosition);
+        yPosition += lineHeight;
       }
+      if (outlet.me) {
+        pdf.text(`ME: ${outlet.me}`, margin, yPosition);
+        yPosition += lineHeight;
+      }
+      yPosition += 3;
 
-      const fileName = `Invoice_${resultModal?.orderData?.outlet?.name}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      // Separator
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 5;
+
+      // Items Header
+      pdf.setFontSize(11);
+      pdf.setFont("", "bold");
+      pdf.text("DAFTAR BARANG", margin, yPosition);
+      yPosition += lineHeight + 3;
+
+      // Column headers
+      pdf.setFontSize(9);
+      pdf.setFont("", "bold");
+      const col1 = margin;
+      const col2 = pageWidth - margin - 60;
+      const col3 = pageWidth - margin - 45;
+      const col4 = pageWidth - margin - 20;
+
+      pdf.text("No", col1, yPosition);
+      pdf.text("Produk", col1 + 8, yPosition);
+      pdf.text("Qty", col3, yPosition);
+      pdf.text("Harga", col4, yPosition, { align: "right" });
+      yPosition += lineHeight;
+
+      // Items line
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 2;
+
+      // Items
+      pdf.setFont("", "normal");
+      items.forEach((item, index) => {
+        const itemName = item.isCustom ? item.customName : item.product?.name;
+        const itemPrice = item.isCustom ? item.customPrice : item.product?.price;
+        const itemSubtotal = item.subtotal;
+
+        // Check if we need a new page
+        if (yPosition > 250) {
+          pdf.addPage();
+          yPosition = 20;
+        }
+
+        pdf.setFontSize(9);
+        pdf.text(`${index + 1}`, col1, yPosition);
+        
+        // Product name with wrapping
+        const nameLines = pdf.splitTextToSize(itemName || "", 40);
+        nameLines.forEach((line: string, lineIdx: number) => {
+          pdf.text(line, col1 + 8, yPosition + lineIdx * 4);
+        });
+        
+        const nameHeight = nameLines.length * 4;
+        pdf.text(`${item.qty}`, col3, yPosition + (nameHeight - 4) / 2);
+        pdf.text(`Rp ${(itemPrice || 0).toLocaleString("id-ID")}`, col4, yPosition + (nameHeight - 4) / 2, { align: "right" });
+        
+        yPosition += Math.max(nameHeight, lineHeight);
+      });
+
+      // Separator
+      yPosition += 2;
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 5;
+
+      // Total
+      pdf.setFontSize(12);
+      pdf.setFont("", "bold");
+      pdf.text(`TOTAL: Rp ${total.toLocaleString("id-ID")}`, margin, yPosition, { align: "right" });
+
+      // Save
+      const fileName = `Invoice_${outlet.name}_${new Date().toISOString().slice(0, 10)}.pdf`;
       pdf.save(fileName);
+      
+      alert("PDF berhasil diunduh!");
     } catch (error) {
       console.error("Error generating PDF:", error);
-      alert("Gagal download PDF");
+      alert("Gagal download PDF: " + error);
     }
+  }
+
+  // SHARE VIA WHATSAPP
+  function handleShareWhatsApp() {
+    if (!resultModal?.orderData) return;
+
+    const outlet = resultModal.orderData.outlet;
+    const items = resultModal.orderData.items;
+    const total = resultModal.orderData.total;
+
+    let message = `*SALES ORDER*\n\n`;
+    message += `📍 Outlet: ${outlet.name}\n`;
+    message += `📦 Cluster: ${outlet.cluster}\n`;
+    message += `⏱️ Tempo: ${outlet.tempo} hari\n`;
+    message += `👤 ME: ${outlet.me || "-"}\n`;
+    message += `\n*DETAIL PRODUK:*\n`;
+
+    items.forEach((item, index) => {
+      const productName = item.isCustom ? item.customName : item.product?.name;
+      const price = item.isCustom ? item.customPrice : item.product?.price;
+      const priceAfterDiscount = (price || 0) * (1 - item.discount / 100);
+      const subtotal = priceAfterDiscount * item.qty;
+
+      message += `\n${index + 1}. ${productName}\n`;
+      message += `   Qty: ${item.qty} unit\n`;
+      message += `   Harga: Rp ${(price || 0).toLocaleString("id-ID")}\n`;
+      message += `   Diskon: ${item.discount}%\n`;
+      message += `   Subtotal: Rp ${subtotal.toLocaleString("id-ID")}\n`;
+    });
+
+    message += `\n*TOTAL: Rp ${total.toLocaleString("id-ID")}*\n`;
+    message += `\n_Generated from Ragasi App_`;
+
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
+    window.open(whatsappUrl, "_blank");
   }
 
 
   // TOTAL
   const total = useMemo(() => {
     return cart.reduce((acc, item) => {
-      const priceAfterDiscount =
-        item.product.price * (1 - item.discount / 100);
+      const itemPrice = item.isCustom ? item.customPrice : item.product?.price;
+      const priceAfterDiscount = (itemPrice || 0) * (1 - item.discount / 100);
 
       return acc + priceAfterDiscount * item.qty;
     }, 0);
@@ -512,6 +753,17 @@ console.log("FILTERED:", filteredProducts.length);
       <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-xl p-8 space-y-6">
 
         <h1 className="text-3xl font-bold">Sales Order</h1>
+
+        {/* NOTIFICATION TOAST */}
+        {notification && (
+          <div className={`fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white font-semibold z-40 transition-all ${
+            notification.type === "success" ? "bg-green-500" :
+            notification.type === "error" ? "bg-red-500" :
+            "bg-blue-500"
+          }`}>
+            {notification.message}
+          </div>
+        )}
 
         {/* OUTLET SELECT */}
 <div>
@@ -605,17 +857,24 @@ console.log("FILTERED:", filteredProducts.length);
   <div
     key={p.id}
     onClick={() => {
-      return handleSelectProduct(p);
+      if (p.stock > 0) {
+        return handleSelectProduct(p);
+      }
     }}
-    className="p-3 hover:bg-gray-100 cursor-pointer border-b"
+    className={`p-3 border-b ${
+      p.stock === 0 
+        ? "bg-red-50 cursor-not-allowed opacity-60" 
+        : "hover:bg-gray-100 cursor-pointer"
+    }`}
   >
-    <div className="font-semibold text-gray-800">
+    <div className={`font-semibold ${p.stock === 0 ? "text-red-700" : "text-gray-800"}`}>
       {p.name}
+      {p.stock === 0 && <span className="text-xs ml-2 text-red-600">(Habis)</span>}
     </div>
 
-    <div className="text-sm text-gray-600">
+    <div className={`text-sm ${p.stock === 0 ? "text-red-600" : "text-gray-600"}`}>
       HJR: Rp {p.price?.toLocaleString()} | 
-      <span className={p.stock === 0 ? "text-red-600 font-semibold" : ""}>
+      <span className={p.stock === 0 ? "font-semibold" : ""}>
   Stok: {p.stock}
 </span> 
       Gol: {p.gol || "-"}
@@ -657,7 +916,8 @@ console.log("FILTERED:", filteredProducts.length);
     Add Item
   </button>
 </div>
-        {/* BULK INPUT */}
+
+{/* BULK INPUT */}
         <div className="mt-6">
           <label className="font-semibold">Bulk Input</label>
           <textarea
@@ -678,24 +938,27 @@ console.log("FILTERED:", filteredProducts.length);
           </button>
         </div>
 
-
 {/* CART */}
 {cart.map((item, index) => {
-  const priceAfterDiscount =
-    item.product.price * (1 - item.discount / 100);
-
-  const subtotal =
-    priceAfterDiscount * item.qty;
+  const itemName = item.isCustom ? item.customName : item.product?.name;
+  const itemPrice = item.isCustom ? item.customPrice : item.product?.price;
+  const itemGol = item.isCustom ? null : item.product?.gol;
+  const priceAfterDiscount = (itemPrice || 0) * (1 - item.discount / 100);
+  const subtotal = priceAfterDiscount * item.qty;
 
   return (
     <div
       key={index}
-      className="border border-gray-300 p-4 rounded-lg bg-gray-50 flex justify-between items-center"
+      className={`border p-4 rounded-lg flex justify-between items-center ${
+        item.isCustom ? "bg-yellow-50 border-yellow-300" : "bg-gray-50 border-gray-300"
+      }`}
     >
       <div>
         <div className="font-semibold">
-          {item.product.name} x {item.qty}
+          {itemName} x {item.qty}
+          {item.isCustom && <span className="ml-2 text-xs bg-yellow-200 px-2 py-1 rounded">Custom</span>}
         </div>
+        {itemGol && <div className="text-sm text-gray-600">Gol: <span className="font-semibold">{itemGol}</span></div>}
         <div>Diskon: {item.discount}%</div>
         <div>
           Subtotal: Rp {subtotal.toLocaleString()}
@@ -706,8 +969,21 @@ console.log("FILTERED:", filteredProducts.length);
         <button
           onClick={(e) => {
             e.stopPropagation();
-            setEditingId(item.product.id);
+            setEditingId(`item-${index}`);
             setEditQty(item.qty);
+            setEditDiscount(item.discount);
+            if (item.isCustom) {
+              setEditProduct(null);
+              setEditProductSearch("");
+              setEditCustomName(item.customName || "");
+              setEditCustomPrice(item.customPrice || 0);
+            } else {
+              setEditProduct(item.product || null);
+              setEditProductSearch(item.product?.name || "");
+              setEditCustomName("");
+              setEditCustomPrice(0);
+            }
+            setShowEditProductDropdown(false);
           }}
           className="text-blue-600 font-semibold hover:underline"
         >
@@ -727,62 +1003,270 @@ console.log("FILTERED:", filteredProducts.length);
 {/* EDIT MODAL */}
 {editingId && (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-lg p-6 w-96 shadow-xl">
+    <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl max-h-96 overflow-y-auto">
       <h2 className="text-xl font-bold mb-4">Edit Item</h2>
       
-      {cart.find((item) => item.product.id === editingId) && (
+      {editingId.startsWith("item-") && (
         <div className="space-y-4">
-          <div>
-            <label className="block font-semibold mb-2">Nama Produk:</label>
-            <div className="p-3 bg-gray-100 rounded-lg border border-gray-300">
-              {cart.find((item) => item.product.id === editingId)?.product.name}
-            </div>
-          </div>
+          {(() => {
+            const index = parseInt(editingId.split("-")[1]);
+            const item = cart[index];
+            if (!item) return null;
 
-          <div>
-            <label className="block font-semibold mb-2">Harga (Rp):</label>
-            <div className="p-3 bg-gray-100 rounded-lg border border-gray-300">
-              {cart.find((item) => item.product.id === editingId)?.product.price.toLocaleString()}
-            </div>
-          </div>
+            const isCustom = item.isCustom;
+            const itemPrice = editProduct ? editProduct.price : (item.isCustom ? item.customPrice : item.product?.price);
+            const itemGol = editProduct ? editProduct.gol : (item.isCustom ? null : item.product?.gol);
 
-          <div>
-            <label className="block font-semibold mb-2">Quantity:</label>
-            <input
-              type="number"
-              min="1"
-              value={editQty}
-              onChange={(e) => setEditQty(Number(e.target.value))}
-              className="w-full border border-gray-300 rounded-lg p-3 text-lg"
-            />
-          </div>
+            return (
+              <>
+                {/* NAMA PRODUK */}
+                {!isCustom ? (
+                  <div>
+                    <label className="block font-semibold mb-2">Nama Produk:</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Cari produk..."
+                        value={editProductSearch}
+                        onChange={(e) => {
+                          setEditProductSearch(e.target.value);
+                          setShowEditProductDropdown(true);
+                        }}
+                        onFocus={() => {
+                          setShowEditProductDropdown(true);
+                        }}
+                        className="w-full border rounded-lg p-3"
+                      />
+                      {showEditProductDropdown && (
+                        <div className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto border border-gray-300 rounded-lg bg-white shadow">
+                          {products
+                            .filter((p) =>
+                              editProductSearch === "" || p.name.toLowerCase().includes(editProductSearch.toLowerCase())
+                            )
+                            .map((p) => (
+                              <div
+                                key={p.id}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  setEditProduct(p);
+                                  setEditProductSearch(p.name);
+                                  setShowEditProductDropdown(false);
+                                }}
+                                className={`p-3 hover:bg-blue-100 cursor-pointer border-b text-sm ${
+                                  editProduct?.id === p.id ? "bg-blue-50 font-semibold" : ""
+                                }`}
+                              >
+                                <div className="font-semibold">{p.name}</div>
+                                <div className="text-xs text-gray-600">
+                                  Gol: {p.gol} | Harga: Rp {p.price?.toLocaleString()}
+                                </div>
+                              </div>
+                            ))}
+                          {products.filter((p) =>
+                            editProductSearch === "" || p.name.toLowerCase().includes(editProductSearch.toLowerCase())
+                          ).length === 0 && (
+                            <div className="p-3 text-gray-400 text-sm">Produk tidak ditemukan</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {editProduct && (
+                      <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-sm">
+                        <div className="font-semibold text-green-700">✓ {editProduct.name}</div>
+                        <div className="text-xs text-green-600">Gol: {editProduct.gol} | Harga: Rp {editProduct.price?.toLocaleString()}</div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block font-semibold mb-2">Nama Produk (Cari atau Manual):</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Cari di database atau ketik manual..."
+                          value={editProductSearch}
+                          onChange={(e) => {
+                            setEditProductSearch(e.target.value);
+                            setShowEditProductDropdown(true);
+                          }}
+                          onFocus={() => {
+                            setShowEditProductDropdown(true);
+                          }}
+                          className="w-full border border-gray-300 rounded-lg p-3"
+                        />
+                        {showEditProductDropdown && (
+                          <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto border border-gray-300 rounded-lg bg-white shadow">
+                            {products
+                              .filter((p) =>
+                                editProductSearch === "" || p.name.toLowerCase().includes(editProductSearch.toLowerCase())
+                              )
+                              .map((p) => (
+                                <div
+                                  key={p.id}
+                                  onMouseDown={(e) => {
+                                    if (p.stock === 0) {
+                                      e.preventDefault();
+                                      return;
+                                    }
+                                    e.preventDefault();
+                                    setEditProduct(p);
+                                    setEditProductSearch(p.name);
+                                    setShowEditProductDropdown(false);
+                                    // Auto-update harga dan diskon dari database
+                                    if (selectedOutlet) {
+                                      const autoDiscount = getDiscount(selectedOutlet.cluster, p, editQty);
+                                      setEditDiscount(autoDiscount);
+                                    }
+                                  }}
+                                  className={`p-3 border-b text-sm ${
+                                    p.stock === 0
+                                      ? "bg-red-50 cursor-not-allowed opacity-60"
+                                      : "hover:bg-blue-100 cursor-pointer"
+                                  } ${
+                                    editProduct?.id === p.id ? "bg-blue-50 font-semibold" : ""
+                                  }`}
+                                >
+                                  <div className={`font-semibold ${p.stock === 0 ? "text-red-700" : ""}`}>
+                                    {p.name}
+                                    {p.stock === 0 && <span className="text-xs ml-2 text-red-600">(Habis)</span>}
+                                  </div>
+                                  <div className={`text-xs ${p.stock === 0 ? "text-red-600" : "text-gray-600"}`}>
+                                    Gol: {p.gol} | Harga: Rp {p.price?.toLocaleString()} | Stok: {p.stock}
+                                  </div>
+                                </div>
+                              ))}
+                            {products.filter((p) =>
+                              editProductSearch === "" || p.name.toLowerCase().includes(editProductSearch.toLowerCase())
+                            ).length === 0 && (
+                              <div className="p-3 text-gray-400 text-sm">Produk tidak ditemukan</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {editProduct && (
+                        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-sm">
+                          <div className="font-semibold text-green-700">✓ {editProduct.name}</div>
+                          <div className="text-xs text-green-600">Gol: {editProduct.gol} | Harga: Rp {editProduct.price?.toLocaleString()}</div>
+                        </div>
+                      )}
+                      {!editProduct && editProductSearch && (
+                        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm">
+                          <div className="font-semibold text-yellow-700">ℹ Manual Input</div>
+                          <div className="text-xs text-yellow-600">Produk tidak ditemukan, akan disimpan sebagai custom</div>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block font-semibold mb-2">Harga (Rp):</label>
+                      {editProduct ? (
+                        <div className="p-3 bg-blue-50 rounded-lg border border-blue-300 font-semibold text-blue-700">
+                          Rp {editProduct.price?.toLocaleString()}
+                        </div>
+                      ) : (
+                        <input
+                          type="number"
+                          placeholder="Masukkan harga manual (jika tidak ada di database)..."
+                          value={editCustomPrice}
+                          onChange={(e) => setEditCustomPrice(Number(e.target.value))}
+                          className="w-full border border-gray-300 rounded-lg p-3"
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
 
-          <div>
-            <label className="block font-semibold mb-2">Diskon:</label>
-            <div className="p-3 bg-gray-100 rounded-lg border border-gray-300">
-              {cart.find((item) => item.product.id === editingId)?.discount}%
-            </div>
-          </div>
+                {/* GOLONGAN BARANG - tampil saat convert ke regular */}
+                {isCustom && editProduct && (
+                  <div>
+                    <label className="block font-semibold mb-2">Golongan Barang:</label>
+                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-300 font-semibold text-blue-700">
+                      {editProduct.gol}
+                    </div>
+                  </div>
+                )}
 
-          <div className="flex gap-3 mt-6">
-            <button
-              onClick={() => {
-                const item = cart.find((item) => item.product.id === editingId);
-                if (item) {
-                  handleSaveEdit(item.product);
-                }
-              }}
-              className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-semibold"
-            >
-              Simpan
-            </button>
-            <button
-              onClick={() => setEditingId(null)}
-              className="flex-1 bg-gray-400 text-white px-4 py-2 rounded-lg hover:bg-gray-500 font-semibold"
-            >
-              Batal
-            </button>
-          </div>
+                {/* GOLONGAN BARANG - untuk produk regular */}
+                {!isCustom && itemGol && (
+                  <div>
+                    <label className="block font-semibold mb-2">Golongan Barang:</label>
+                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-300 font-semibold text-blue-700">
+                      {itemGol}
+                    </div>
+                  </div>
+                )}
+
+                {/* HARGA (READ-ONLY) - untuk produk regular */}
+                {!isCustom && (
+                  <div>
+                    <label className="block font-semibold mb-2">Harga (Rp):</label>
+                    <div className="p-3 bg-gray-100 rounded-lg border border-gray-300">
+                      {itemPrice?.toLocaleString()}
+                    </div>
+                  </div>
+                )}
+
+                {/* QUANTITY */}
+                <div>
+                  <label className="block font-semibold mb-2">Quantity:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editQty}
+                    onChange={(e) => setEditQty(Number(e.target.value))}
+                    className="w-full border border-gray-300 rounded-lg p-3 text-lg"
+                  />
+                </div>
+
+                {/* DISKON */}
+                {isCustom && !editProduct ? (
+                  <div>
+                    <label className="block font-semibold mb-2">Diskon:</label>
+                    <div className="p-3 bg-gray-100 rounded-lg border border-gray-300">
+                      0% (Custom item tidak ada diskon)
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block font-semibold mb-2">Diskon (%):</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editDiscount}
+                      onChange={(e) => setEditDiscount(Number(e.target.value))}
+                      className="w-full border border-gray-300 rounded-lg p-3 text-lg"
+                    />
+                  </div>
+                )}
+
+                <div className="flex gap-3 mt-6">
+                  <button
+                    onClick={() => {
+                      handleSaveEdit(index);
+                    }}
+                    className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-semibold"
+                  >
+                    Simpan
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingId(null);
+                      setEditProduct(null);
+                      setEditProductSearch("");
+                      setEditQty(1);
+                      setEditDiscount(0);
+                      setEditCustomName("");
+                      setEditCustomPrice(0);
+                    }}
+                    className="flex-1 bg-gray-400 text-white px-4 py-2 rounded-lg hover:bg-gray-500 font-semibold"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
     </div>
@@ -794,12 +1278,20 @@ console.log("FILTERED:", filteredProducts.length);
   <div>
     Total: Rp {total.toLocaleString()}
   </div>
-  <button
-    onClick={handleSubmitOrder}
-    className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700"
-  >
-    Post Order
-  </button>
+  <div className="flex gap-3">
+    <button
+      onClick={handleSubmitOrder}
+      className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700"
+    >
+      Post Order
+    </button>
+    <button
+      onClick={() => router.push('/marketing')}
+      className="flex-1 bg-gray-700 text-white px-6 py-3 rounded-lg hover:bg-gray-600"
+    >
+      ← Kembali ke Marketing
+    </button>
+  </div>
 </div>
 
 {/* ERROR MODAL */}
@@ -832,7 +1324,7 @@ console.log("FILTERED:", filteredProducts.length);
 {/* SUCCESS MODAL - INVOICE */}
 {resultModal?.type === "success" && (
   <div className="fixed inset-0 flex items-center justify-center z-50" style={{backgroundColor: 'rgba(0, 0, 0, 0.3)'}}>
-    <div id="invoice-content" className="bg-white rounded-lg p-8 w-full max-w-2xl shadow-xl max-h-96 overflow-y-auto">
+    <div ref={invoiceRef} className="bg-white rounded-lg p-8 w-full max-w-2xl shadow-xl max-h-96 overflow-y-auto">
       <div className="mb-6">
         <div className="text-green-600 text-5xl mb-4 text-center">✓</div>
         <h2 className="text-2xl font-bold text-green-600 text-center">{resultModal.title}</h2>
@@ -868,18 +1360,28 @@ console.log("FILTERED:", filteredProducts.length);
           <h3 className="font-bold text-lg text-gray-800 mb-3">Detail Produk</h3>
           <div className="space-y-3">
             {resultModal?.orderData?.items?.map((item, index) => {
-              const priceAfterDiscount =
-                item.product.price * (1 - item.discount / 100);
+              const itemName = item.isCustom ? item.customName : item.product?.name;
+              const itemPrice = item.isCustom ? item.customPrice : item.product?.price;
+              const itemGol = item.isCustom ? null : item.product?.gol;
+              
+              const priceAfterDiscount = (itemPrice || 0) * (1 - item.discount / 100);
               const subtotal = priceAfterDiscount * item.qty;
 
               return (
-                <div key={index} className="bg-white p-4 rounded border border-gray-200 mb-3">
+                <div key={index} className={`p-4 rounded border mb-3 ${
+                  item.isCustom ? "bg-yellow-50 border-yellow-300" : "bg-white border-gray-200"
+                }`}>
                   <div className="flex justify-between items-start mb-3 pb-3 border-b border-gray-100">
                     <div>
-                      <div className="font-bold text-gray-800 text-base">{item.product.name}</div>
-                      <div className="text-sm text-gray-600 mt-1">
-                        Gol: <span className="font-semibold">{item.product.gol || "-"}</span>
+                      <div className="font-bold text-gray-800 text-base">
+                        {itemName}
+                        {item.isCustom && <span className="ml-2 text-xs bg-yellow-200 px-2 py-1 rounded">Custom</span>}
                       </div>
+                      {itemGol && (
+                        <div className="text-sm text-gray-600 mt-1">
+                          Gol: <span className="font-semibold">{itemGol || "-"}</span>
+                        </div>
+                      )}
                     </div>
                     <div className="text-right bg-blue-50 px-3 py-1 rounded">
                       <div className="text-lg font-bold text-blue-600">{item.qty}</div>
@@ -890,7 +1392,7 @@ console.log("FILTERED:", filteredProducts.length);
                     <div>
                       <div className="text-xs text-gray-600 mb-1">Harga Jual Retail</div>
                       <div className="font-bold text-gray-800">
-                        Rp {item.product.price.toLocaleString()}
+                        Rp {(itemPrice || 0).toLocaleString()}
                       </div>
                     </div>
                     <div>
@@ -935,8 +1437,14 @@ console.log("FILTERED:", filteredProducts.length);
           📥 Download PDF
         </button>
         <button
+          onClick={handleShareWhatsApp}
+          className="flex-1 bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 font-semibold flex items-center justify-center gap-2"
+        >
+          💬 Share WhatsApp
+        </button>
+        <button
           onClick={() => setResultModal(null)}
-          className="flex-1 bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 font-semibold"
+          className="flex-1 bg-gray-600 text-white px-4 py-3 rounded-lg hover:bg-gray-700 font-semibold"
         >
           Tutup
         </button>
