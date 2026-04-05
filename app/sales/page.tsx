@@ -10,10 +10,11 @@ type Outlet = {
   id: string;
   name: string;
   cluster: string | null;
-  tempo: number | null;
-  credit_limit: number | null;
+  top_hari: number | null;
+  limit_rupiah: number | null;
   current_saldo: number | null;
   me: string | null;
+  nio: string | null;
 };
 
 type Product = {
@@ -591,7 +592,7 @@ function handleAddItem() {
       pdf.setFont("", "normal");
       pdf.text(`Nama Outlet: ${outlet.name}`, margin, yPosition);
       yPosition += lineHeight;
-      pdf.text(`Tempo: ${outlet.tempo} hari`, margin, yPosition);
+      pdf.text(`Tempo: ${outlet.top_hari} hari`, margin, yPosition);
       yPosition += lineHeight;
       if (outlet.cluster) {
         pdf.text(`Cluster: ${outlet.cluster}`, margin, yPosition);
@@ -692,7 +693,7 @@ function handleAddItem() {
     let message = `*SALES ORDER*\n\n`;
     message += `📍 Outlet: ${outlet.name}\n`;
     message += `📦 Cluster: ${outlet.cluster}\n`;
-    message += `⏱️ Tempo: ${outlet.tempo} hari\n`;
+    message += `⏱️ Tempo: ${outlet.top_hari} hari\n`;
     message += `👤 ME: ${outlet.me || "-"}\n`;
     message += `\n*DETAIL PRODUK:*\n`;
 
@@ -731,10 +732,9 @@ function handleAddItem() {
   const sisaLimit = useMemo(() => {
   if (!selectedOutlet) return 0;
 
-  return (
-    (selectedOutlet.credit_limit || 0) -
-    (selectedOutlet.current_saldo || 0)
-  );
+  // Show current saldo, ensure non-negative
+  const saldo = selectedOutlet.current_saldo || 0;
+  return Math.max(0, saldo);
 }, [selectedOutlet]);
 
 const filteredProducts = useMemo(() => {
@@ -822,9 +822,9 @@ console.log("FILTERED:", filteredProducts.length);
         {selectedOutlet && (
           <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg space-y-1">
             <div>Cluster: {selectedOutlet.cluster}</div>
-            <div>Tempo: {selectedOutlet.tempo} hari</div>
+            <div>Tempo: {selectedOutlet.top_hari} hari</div>
             <div>
-              Sisa Limit: Rp {sisaLimit.toLocaleString()}
+              Saldo: Rp {sisaLimit.toLocaleString()}
             </div>
             <div>ME: {selectedOutlet.me}</div>
           </div>
@@ -1346,7 +1346,7 @@ console.log("FILTERED:", filteredProducts.length);
             </div>
             <div>
               <span className="text-gray-600">Tempo:</span>
-              <div className="font-semibold text-gray-800">{resultModal?.orderData?.outlet?.tempo} hari</div>
+              <div className="font-semibold text-gray-800">{resultModal?.orderData?.outlet?.top_hari} hari</div>
             </div>
             <div>
               <span className="text-gray-600">ME:</span>

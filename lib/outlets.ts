@@ -300,7 +300,7 @@ export async function uploadOutletData(csvContent: string) {
 }
 
 /**
- * Get all outlets - WITH PAGINATION TO BYPASS 1000 LIMIT
+ * Get all ACTIVE outlets - WITH PAGINATION TO BYPASS 1000 LIMIT
  */
 export async function getAllOutlets() {
   try {
@@ -309,7 +309,7 @@ export async function getAllOutlets() {
     let page = 0;
     let hasMore = true;
 
-    // Fetch semua data dengan pagination
+    // Fetch semua data dengan pagination - HANYA ACTIVE OUTLETS
     while (hasMore) {
       const from = page * pageSize;
       const to = from + pageSize - 1;
@@ -317,6 +317,7 @@ export async function getAllOutlets() {
       const { data, error, count } = await supabase
         .from('outlets')
         .select('*', { count: 'exact' })
+        .eq('is_active', true)  // Only active outlets
         .range(from, to)
         .order('name', { ascending: true });
 
@@ -328,7 +329,7 @@ export async function getAllOutlets() {
         hasMore = false;
       } else {
         allData = [...allData, ...data];
-        console.log(`📊 Page ${page + 1}: ${data.length} outlets (total so far: ${allData.length})`);
+        console.log(`📊 Page ${page + 1}: ${data.length} active outlets (total so far: ${allData.length})`);
         
         // Check if we got all
         if (count && allData.length >= count) {
@@ -338,7 +339,7 @@ export async function getAllOutlets() {
       }
     }
 
-    console.log(`📊 getAllOutlets: Total fetched ${allData.length} outlets`);
+    console.log(`📊 getAllOutlets: Total fetched ${allData.length} active outlets`);
     return { data: allData, count: allData.length, error: null };
   } catch (error) {
     return { data: null, count: 0, error: String(error) };

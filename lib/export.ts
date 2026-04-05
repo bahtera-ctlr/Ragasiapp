@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-// GET ALL OUTLETS - WITH PAGINATION TO BYPASS 1000 LIMIT
+// GET ALL ACTIVE OUTLETS - WITH PAGINATION TO BYPASS 1000 LIMIT
 export async function getOutlets() {
   try {
     let allData: any[] = [];
@@ -8,7 +8,7 @@ export async function getOutlets() {
     let page = 0;
     let hasMore = true;
 
-    // Fetch semua data dengan pagination
+    // Fetch semua data dengan pagination - HANYA ACTIVE OUTLETS
     while (hasMore) {
       const from = page * pageSize;
       const to = from + pageSize - 1;
@@ -16,6 +16,7 @@ export async function getOutlets() {
       const { data, error, count } = await supabase
         .from('outlets')
         .select('*', { count: 'exact' })
+        .eq('is_active', true)  // Only active outlets
         .range(from, to)
         .order('name', { ascending: true });
 
@@ -27,7 +28,7 @@ export async function getOutlets() {
         hasMore = false;
       } else {
         allData = [...allData, ...data];
-        console.log(`📊 Fetched page ${page + 1}: ${data.length} outlets (total so far: ${allData.length})`);
+        console.log(`📊 Fetched page ${page + 1}: ${data.length} active outlets (total so far: ${allData.length})`);
         
         // Check if we got all
         if (count && allData.length >= count) {
@@ -37,7 +38,7 @@ export async function getOutlets() {
       }
     }
 
-    console.log(`📊 getOutlets: Total fetched ${allData.length} outlets`);
+    console.log(`📊 getOutlets: Total fetched ${allData.length} active outlets`);
     return { data: allData, error: null };
   } catch (error) {
     return { error: String(error), data: null };
