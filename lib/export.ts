@@ -148,20 +148,26 @@ export function exportInvoicesToCSV(invoices: any[]) {
 
 // EXPORT INVOICE ITEMS TO CSV (Special format for Fakturis)
 // Format: NIO, Nama Outlet, No Barang, Nama Barang, HJR, Dikson, Nett
-// Items should be passed in already - this function just formats them
-export function exportInvoiceItemsToCSV(invoice: any, orderItems?: any[]) {
+// Items should be passed in already with nomor_barang enriched
+export function exportInvoiceItemsToCSV(invoice: any, orderItems?: any[], outletData?: any) {
   if (!invoice) {
     console.error('No invoice to export');
     return;
   }
 
   console.log('Invoice object for export:', invoice);
+  console.log('Outlet data:', outletData);
 
-  const outletName = invoice.outlet?.name || invoice.outlet_name || '-';
-  const nio = invoice.outlet?.NIO || '-';
+  // Use outletData if provided, otherwise fall back to invoice.outlet
+  const outlet = outletData || invoice.outlet || {};
+  const outletName = outlet.name || invoice.outlet_name || '-';
+  const nio = outlet.NIO || '-';
   const invoiceNumber = invoice.invoice_number || 'Unknown';
 
-  // Parse items from invoice or parameter
+  console.log('NIO:', nio);
+  console.log('Outlet name:', outletName);
+
+  // Parse items from parameter or invoice object
   let items: any[] = [];
   
   // If items provided via parameter, use them
@@ -192,7 +198,8 @@ export function exportInvoiceItemsToCSV(invoice: any, orderItems?: any[]) {
 
   // Transform items to CSV format
   const csvData = items.map((item: any) => {
-    const productId = item.product_id || item.id || '-';
+    // Use nomor_barang if available (enriched), otherwise fall back to product_id
+    const nomorBarang = item.nomor_barang || item.product_id || '-';
     const productName = item.product_name || item.nama_barang || item.name || '-';
     const price = item.price || item.harga || 0;
     const discount = item.discount || 0;
@@ -208,7 +215,7 @@ export function exportInvoiceItemsToCSV(invoice: any, orderItems?: any[]) {
     return {
       'NIO': nio,
       'Nama Outlet': outletName,
-      'No Barang': productId,
+      'No Barang': nomorBarang,
       'Nama Barang': productName,
       'HJR': price.toLocaleString('id-ID'),
       'Dikson': discount + '%',

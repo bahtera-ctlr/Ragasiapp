@@ -54,8 +54,45 @@ export default function FakturisDashboard() {
         }
       }
 
-      // Export with items
-      exportInvoiceItemsToCSV(inv, orderItems);
+      // Fetch outlet with NIO
+      let outletData: any = inv.outlet;
+      if (inv.outlet_id && !inv.outlet?.NIO) {
+        const { data: outletInfo } = await supabase
+          .from('outlets')
+          .select('*')
+          .eq('id', inv.outlet_id)
+          .single();
+        
+        if (outletInfo) {
+          outletData = outletInfo;
+        }
+      }
+
+      // Fetch product nomor_barang for each item
+      const enrichedItems = await Promise.all(
+        orderItems.map(async (item) => {
+          let nomor_barang = item.product_id || '-';
+          
+          if (item.product_id) {
+            const { data: productData } = await supabase
+              .from('products')
+              .select('nomor_barang')
+              .eq('id', item.product_id)
+              .single();
+            
+            if (productData?.nomor_barang) {
+              nomor_barang = productData.nomor_barang;
+            }
+          }
+          
+          return { ...item, nomor_barang };
+        })
+      );
+
+      console.log('Enriched items with nomor_barang:', enrichedItems);
+
+      // Export with enriched items and outlet data
+      exportInvoiceItemsToCSV(inv, enrichedItems, outletData);
     } catch (err) {
       console.error('Error exporting CSV:', err);
       alert('Error saat export CSV. Lihat console untuk detail.');
