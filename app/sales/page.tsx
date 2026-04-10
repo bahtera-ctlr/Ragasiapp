@@ -503,11 +503,13 @@ function handleAddItem() {
     console.error(error);
     let errorMessage = error.message || "Terjadi kesalahan saat memproses order";
     
-    // Parse error message untuk lebih readable
+    // Parse error message untuk lebih readable - replace product ID dengan product name
     if (errorMessage.includes("Stok tidak mencukupi")) {
-      errorMessage = errorMessage.replace(/UUID \(([^)]+)\)/, (match, uuid) => {
-        const product = cart.find(item => item.product?.id === uuid);
-        return product ? product.product?.name || uuid : uuid;
+      // Format: "Stok tidak mencukupi: Produk ID {uuid} hanya tersedia {x} unit, diminta {y}"
+      errorMessage = errorMessage.replace(/Produk ID ([a-f0-9\-]+)/gi, (match, uuid) => {
+        const cartItem = cart.find(item => item.product?.id === uuid);
+        const productName = cartItem?.product?.name || uuid;
+        return `Produk ${productName}`;
       });
     }
     

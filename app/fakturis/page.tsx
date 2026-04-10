@@ -29,8 +29,13 @@ export default function FakturisDashboard() {
     fetchInvoices();
   }, [loading, hasAccess, statusFilter]);
 
+  // Show page UI immediately, only show "Access Denied" if user is authenticated and doesn't have access
+  if (!user && loading) {
+    return <LoadingSpinner />;
+  }
+
   // Redirect jika tidak punya akses
-  if (!loading && !hasAccess) {
+  if (!loading && user && !hasAccess) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
         <div className="text-center">
@@ -258,6 +263,24 @@ export default function FakturisDashboard() {
                     </p>
                     {invoice.faktur_status === 'terfaktur' && invoice.faktur_officer_name && (
                       <p className="text-purple-300">Petugas: {invoice.faktur_officer_name}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Shipment Status */}
+                {invoice.shipment_status && (
+                  <div className="mb-4 p-2 bg-amber-900/30 rounded border border-amber-700 text-xs">
+                    <p className="text-amber-400 font-semibold mb-1">
+                      {invoice.shipment_status === 'ready' ? '📦 Siap Kirim' : 
+                       invoice.shipment_status === 'planned' ? '📋 Rencana Kirim' : 
+                       invoice.shipment_status === 'completed' ? '✓ Selesai Kirim' : 
+                       invoice.shipment_status}
+                    </p>
+                    {invoice.shipment_status === 'planned' && invoice.expedisi_officer_name && (
+                      <p className="text-amber-300">Petugas: {invoice.expedisi_officer_name}</p>
+                    )}
+                    {invoice.shipment_status === 'completed' && invoice.delivery_date && (
+                      <p className="text-amber-300">Terkirim: {new Date(invoice.delivery_date).toLocaleDateString('id-ID')}</p>
                     )}
                   </div>
                 )}

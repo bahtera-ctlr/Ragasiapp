@@ -42,8 +42,13 @@ export default function AdminExpedisiDashboard() {
     fetchData();
   }, [loading, hasAccess, tab]);
 
+  // Show page UI immediately, only show "Access Denied" if user is authenticated and doesn't have access
+  if (!user && loading) {
+    return <LoadingSpinner />;
+  }
+
   // Redirect jika tidak punya akses
-  if (!loading && !hasAccess) {
+  if (!loading && user && !hasAccess) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
         <div className="text-center">

@@ -255,7 +255,81 @@ export async function getInvoices(filters?: {
   }
 }
 
-// GET INVOICES BY MARKETING ID - WITH OUTLET INFO (SIMPLIFIED)
+// GET PENDING INVOICES BY MARKETING ID (draft/posted - not yet released by finance)
+export async function getPendingInvoicesByMarketing(marketingId: string) {
+  try {
+    // Fetch all invoices with draft/posted status (pending finance review)
+    const { data: invoicesData, error: invoicesError } = await supabase
+      .from('invoices')
+      .select('*')
+      .in('status', ['draft', 'posted'])
+      .order('created_at', { ascending: false });
+
+    if (invoicesError) {
+      console.error('Error fetching pending invoices:', invoicesError);
+      return { error: invoicesError.message, data: null };
+    }
+
+    if (!invoicesData || invoicesData.length === 0) {
+      return { data: [], error: null };
+    }
+
+    // Get the order IDs from invoices
+    const orderIds = [...new Set(invoicesData.map(inv => inv.order_id))];
+
+    if (orderIds.length === 0) {
+      return { data: [], error: null };
+    }
+
+    // Fetch orders to filter by marketing_id AND get order created_at
+    const { data: ordersData, error: ordersError } = await supabase
+      .from('orders')
+      .select('id, created_at')
+      .eq('marketing_id', marketingId)
+      .in('id', orderIds);
+
+    if (ordersError) {
+      console.error('Error fetching orders:', ordersError);
+      return { error: ordersError.message, data: null };
+    }
+
+    if (!ordersData || ordersData.length === 0) {
+      return { data: [], error: null };
+    }
+
+    // Filter invoices to only those with matching orders
+    const matchingOrderIds = ordersData.map(o => o.id);
+    const orderMap = new Map(ordersData.map(o => [o.id, o]));
+    const filteredInvoices = invoicesData.filter(inv => 
+      matchingOrderIds.includes(inv.order_id)
+    );
+
+    // Fetch outlet data
+    if (filteredInvoices.length > 0) {
+      const outletIds = [...new Set(filteredInvoices.map(inv => inv.outlet_id))];
+      const { data: outletsData, error: outletsError } = await supabase
+        .from('outlets')
+        .select('*');
+
+      // Merge outlet and order data
+      const outletMap = new Map((outletsData || []).map(o => [o.id, o]));
+      const enhancedData = filteredInvoices.map(invoice => ({
+        ...invoice,
+        outlet: outletMap.get(invoice.outlet_id) || null,
+        order_created_at: orderMap.get(invoice.order_id)?.created_at || invoice.created_at
+      }));
+
+      return { data: enhancedData, error: null };
+    }
+
+    return { data: [], error: null };
+  } catch (error) {
+    console.error('Error in getPendingInvoicesByMarketing:', error);
+    return { error: String(error), data: null };
+  }
+}
+
+// GET INVOICES BY MARKETING ID - WITH OUTLET INFO (RELEASED/REJECTED/PAID)
 export async function getInvoicesByMarketing(marketingId: string) {
   try {
     // Fetch all invoices with released/rejected/paid status first

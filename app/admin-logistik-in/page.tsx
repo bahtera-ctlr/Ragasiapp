@@ -20,6 +20,13 @@ interface Invoice {
   faktur_status?: string;
   faktur_officer_name?: string;
   faktur_notes?: string;
+  shipment_status?: string;
+  expedisi_officer_name?: string;
+  shipment_plan?: string;
+  shipment_date?: string;
+  delivery_status?: string;
+  delivery_date?: string;
+  delivery_notes?: string;
   released_at: string;
   outlet?: {
     id: string;
@@ -55,16 +62,8 @@ export default function AdminLogistikInPage() {
   useEffect(() => {
     console.log('useEffect triggered - user:', user);
     if (!user) {
-      console.log('No user found, waiting for auth to restore...');
-      // Wait 1.5 seconds for session to restore
-      const timer = setTimeout(() => {
-        console.log('Timer finished, checking user again:', user);
-        if (!user) {
-          console.log('Still no user, redirecting to login');
-          router.push('/');
-        }
-      }, 1500);
-      return () => clearTimeout(timer);
+      console.log('No user found - this might happen during initial auth check. User will redirect if still null after auth completes.');
+      return;
     }
     console.log('User found, fetching data');
     
@@ -417,6 +416,63 @@ export default function AdminLogistikInPage() {
                           </div>
                         )}
                       </>
+                    )}
+                  </div>
+                )}
+
+                {/* Shipment Status */}
+                {invoice.shipment_status && (
+                  <div className={`rounded p-3 mb-3 text-sm space-y-1 ${
+                    invoice.shipment_status === 'completed'
+                      ? 'bg-green-900/30 border border-green-700'
+                      : invoice.shipment_status === 'planned'
+                      ? 'bg-amber-900/30 border border-amber-700'
+                      : 'bg-gray-800'
+                  }`}>
+                    <div>
+                      <span className={`${
+                        invoice.shipment_status === 'completed'
+                          ? 'text-green-400'
+                          : invoice.shipment_status === 'planned'
+                          ? 'text-amber-400'
+                          : 'text-gray-400'
+                      }`}>
+                        Status Pengiriman:
+                      </span>
+                      <span className={`font-semibold ml-2 ${
+                        invoice.shipment_status === 'completed'
+                          ? 'text-green-300'
+                          : invoice.shipment_status === 'planned'
+                          ? 'text-amber-300'
+                          : 'text-gray-300'
+                      }`}>
+                        {invoice.shipment_status === 'ready' ? '📦 Siap Kirim' : 
+                         invoice.shipment_status === 'planned' ? '📋 Rencana Kirim' : 
+                         invoice.shipment_status === 'completed' ? '✓ Selesai Kirim' : 
+                         invoice.shipment_status}
+                      </span>
+                    </div>
+                    {invoice.shipment_status === 'planned' && invoice.expedisi_officer_name && (
+                      <>
+                        <div>
+                          <span className="text-amber-400">Petugas: </span>
+                          <span className="font-semibold text-amber-300">{invoice.expedisi_officer_name}</span>
+                        </div>
+                        {invoice.shipment_plan && (
+                          <div>
+                            <span className="text-amber-400">Rencana: </span>
+                            <span className="font-semibold text-amber-300">{invoice.shipment_plan}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {invoice.shipment_status === 'completed' && (
+                      <div>
+                        <span className="text-green-400">Tanggal Terkirim: </span>
+                        <span className="font-semibold text-green-300">
+                          {invoice.delivery_date ? new Date(invoice.delivery_date).toLocaleDateString('id-ID') : '-'}
+                        </span>
+                      </div>
                     )}
                   </div>
                 )}

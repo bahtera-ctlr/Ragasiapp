@@ -107,8 +107,7 @@ export default function LoginPage() {
       const targetRoute = roleRoutes[profile?.role] || '/dashboard';
       console.log('Redirecting to:', targetRoute);
       
-      // Ensure session is established before navigating
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Redirect langsung tanpa delay - session sudah established
       router.push(targetRoute);
     } catch (err) {
       setError('Terjadi error: ' + String(err));

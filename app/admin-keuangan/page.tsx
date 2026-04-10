@@ -44,8 +44,13 @@ export default function AdminKeuanganDashboard() {
     fetchData();
   }, [loading, hasAccess, tab]);
 
+  // Show page UI immediately, only show "Access Denied" if user is authenticated and doesn't have access
+  if (!user && loading) {
+    return <LoadingSpinner />;
+  }
+
   // Redirect jika tidak punya akses
-  if (!loading && !hasAccess) {
+  if (!loading && user && !hasAccess) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
         <div className="text-center">
@@ -635,6 +640,40 @@ Generated: ${new Date().toLocaleString('id-ID')}
                             <p>Petugas: {invoice.faktur_officer_name}</p>
                             {invoice.faktur_notes && (
                               <p className="mt-1">Catatan: {invoice.faktur_notes}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Shipment Status */}
+                    {invoice.shipment_status && (
+                      <div className="mb-4 p-3 bg-amber-900/30 rounded border border-amber-700">
+                        <p className="text-amber-400 text-xs mb-1">Status Pengiriman:</p>
+                        <p className="text-amber-200 font-semibold mb-2 text-sm">
+                          {invoice.shipment_status === 'ready' ? '📦 Siap Kirim' : 
+                           invoice.shipment_status === 'planned' ? '📋 Rencana Kirim' : 
+                           invoice.shipment_status === 'completed' ? '✓ Selesai Kirim' : 
+                           invoice.shipment_status}
+                        </p>
+                        {invoice.shipment_status === 'planned' && invoice.expedisi_officer_name && (
+                          <div className="text-xs text-amber-300">
+                            <p>Petugas: {invoice.expedisi_officer_name}</p>
+                            {invoice.shipment_plan && (
+                              <p className="mt-1">Rencana: {invoice.shipment_plan}</p>
+                            )}
+                            {invoice.shipment_date && (
+                              <p className="mt-1">Tanggal: {new Date(invoice.shipment_date).toLocaleDateString('id-ID')}</p>
+                            )}
+                          </div>
+                        )}
+                        {invoice.shipment_status === 'completed' && (
+                          <div className="text-xs text-amber-300">
+                            {invoice.delivery_date && (
+                              <p>Tanggal Terkirim: {new Date(invoice.delivery_date).toLocaleDateString('id-ID')}</p>
+                            )}
+                            {invoice.delivery_notes && (
+                              <p className="mt-1">Catatan: {invoice.delivery_notes}</p>
                             )}
                           </div>
                         )}

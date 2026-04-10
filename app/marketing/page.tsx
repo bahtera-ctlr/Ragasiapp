@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { logOut, getCurrentUser } from '@/lib/auth';
-import { getOrders, createInvoice, getInvoicesByMarketing, updateInvoice } from '@/lib/orders';
+import { getOrders, createInvoice, getInvoicesByMarketing, updateInvoice, getPendingInvoicesByMarketing } from '@/lib/orders';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 
@@ -14,7 +14,7 @@ export default function MarketingDashboard() {
   const { hasAccess } = useRoleCheck(['marketing', 'super_admin']);
 
   const [tab, setTab] = useState<'sales' | 'invoices'>('sales');
-  const [orders, setOrders] = useState<any[]>([]);
+  const [pendingInvoices, setPendingInvoices] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -30,8 +30,14 @@ export default function MarketingDashboard() {
     fetchOrders();
   }, [loading, hasAccess, user, tab]);
 
+  // Show page UI immediately, only show "Access Denied" if user is authenticated and doesn't have access
+  // Don't show loading spinner while auth is checking
+  if (!user && loading) {
+    return <LoadingSpinner />;
+  }
+
   // Redirect jika tidak punya akses
-  if (!loading && !hasAccess) {
+  if (!loading && user && !hasAccess) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
         <div className="text-center">
@@ -54,16 +60,16 @@ export default function MarketingDashboard() {
     setIsLoading(true);
     try {
       if (tab === 'sales') {
-        // Fetch sales orders created by this marketing user
-        const result = await getOrders({ marketing_id: user.id });
+        // Fetch pending invoices (draft/posted - not yet released by finance)
+        const result = await getPendingInvoicesByMarketing(user.id);
 
         if (result.error) {
           console.error(result.error);
         } else {
-          setOrders(result.data || []);
+          setPendingInvoices(result.data || []);
         }
       } else {
-        // Fetch invoices for this marketing user's orders
+        // Fetch released/rejected/paid invoices
         const result = await getInvoicesByMarketing(user.id);
 
         if (result.error) {
@@ -235,7 +241,7 @@ Terima kasih!
                 : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
             }`}
           >
-            Sales Orders
+            Sales Orders (Pending)
           </button>
           <button
             onClick={() => setTab('invoices')}
@@ -245,7 +251,7 @@ Terima kasih!
                 : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
             }`}
           >
-            Invoices
+            Invoices (Released)
           </button>
           <button
             onClick={() => router.push('/sales')}
@@ -261,24 +267,24 @@ Terima kasih!
           </button>
         </div>
 
-        {/* Sales Orders Tab */}
+        {/* Sales Orders Tab (Pending Invoices) */}
         {tab === 'sales' && (
           <div>
             <PageHeader
-              title="Sales Orders"
-              subtitle={`Total: ${orders.length} order`}
+              title="Sales Orders - Pending Review"
+              subtitle={`Total: ${pendingInvoices.length} invoice pending`}
             />
 
             {isLoading ? (
               <div className="text-center py-8 text-gray-400">Loading...</div>
-            ) : orders.length === 0 ? (
+            ) : pendingInvoices.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
-                Belum ada sales order. Klik tombol "Buat Sales Order Baru" untuk membuat order.
+                Semua invoice sudah di-review oleh finance. Klik tombol "Buat Sales Order Baru" untuk membuat order baru.
               </div>
             ) : (
               <div className="space-y-4">
-                {orders.map((order) => {
-                  const createdDate = new Date(order.created_at);
+                {pendingInvoices.map((invoice) => {
+                  const createdDate = new Date(invoice.order_created_at || invoice.created_at);
                   const formattedDate = createdDate.toLocaleDateString('id-ID', { 
                     day: '2-digit', 
                     month: 'short', 
@@ -291,76 +297,105 @@ Terima kasih!
 
                   return (
                   <div
-                    key={order.id}
+                    key={invoice.id}
                     className="bg-gray-900 border border-gray-800 rounded-lg p-6"
                   >
                     <div className="flex justify-between items-start mb-4">
                       <div>
                         <h3 className="text-lg font-semibold">
-                          {order.outlet_name || order.outlet_id} - {formattedDate} {formattedTime}
+                          {invoice.outlet?.name || invoice.outlet_id} - {formattedDate} {formattedTime}
                         </h3>
-                        <p className="text-gray-400 text-sm">Order ID: {order.id.slice(0, 8)}</p>
-                      </div>
-                      <div className="flex gap-2 items-center">
-                        <span
-                          className={`px-3 py-1 rounded-full text-sm font-medium ${
-                            order.status === 'pending'
-                              ? 'bg-yellow-900 text-yellow-200'
-                              : order.status === 'approved'
-                              ? 'bg-green-900 text-green-200'
-                              : 'bg-gray-700 text-gray-200'
-                          }`}
-                        >
-                          {order.status}
-                        </span>
-                        <button
-                          onClick={() => router.push(`/marketing/orders/${order.id}`)}
-                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-sm text-white"
-                        >
-                          Edit
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
-                      <div>
-                        <p className="text-gray-400">Items</p>
-                        <p className="text-white font-semibold">
-                          {Array.isArray(order.items) ? order.items.length : 0} item
+                        <p className="text-gray-400 text-sm">
+                          Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()}
+                          {invoice.outlet?.NIO && ` (NIO: ${invoice.outlet.NIO})`}
                         </p>
                       </div>
+                      <span
+                        className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          invoice.status === 'draft'
+                            ? 'bg-purple-900 text-purple-200'
+                            : 'bg-yellow-900 text-yellow-200'
+                        }`}
+                      >
+                        {invoice.status === 'draft' ? 'Draft' : 'Posted'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
                       <div>
-                        <p className="text-gray-400">Total</p>
+                        <p className="text-gray-400">Amount</p>
                         <p className="text-white font-semibold">
-                          Rp {order.total_amount?.toLocaleString('id-ID') || 0}
+                          Rp {invoice.amount?.toLocaleString('id-ID') || 0}
                         </p>
                       </div>
                       <div>
                         <p className="text-gray-400">Created</p>
                         <p className="text-white">
-                          {new Date(order.created_at).toLocaleDateString('id-ID')}
+                          {new Date(invoice.created_at).toLocaleDateString('id-ID')}
                         </p>
                       </div>
                     </div>
 
-                    <details className="text-sm">
-                      <summary className="cursor-pointer text-blue-400 hover:text-blue-300">
-                        Lihat Details Items
-                      </summary>
-                      <div className="mt-3 pl-3 border-l border-gray-700 space-y-2">
-                        {Array.isArray(order.items) &&
-                          order.items.map((item: any, idx: number) => (
-                            <div key={idx} className="text-gray-300">
-                              <p className="font-medium">{item.product_name || item.product_id}</p>
-                              <p className="text-xs text-gray-500">
-                                {item.qty} × Rp {item.price?.toLocaleString('id-ID')} = Rp{' '}
-                                {item.subtotal?.toLocaleString('id-ID')}
-                                {item.discount > 0 && ` (-${item.discount}%)`}
-                              </p>
-                            </div>
-                          ))}
+                    {/* Show notes if exists */}
+                    {invoice.notes && (
+                      <div className="mb-4 p-3 bg-gray-800 rounded border border-gray-700">
+                        <p className="text-xs text-gray-400 mb-1">Catatan:</p>
+                        <p className="text-sm text-gray-300">{invoice.notes}</p>
                       </div>
-                    </details>
+                    )}
+
+                    {/* Show shipment status if exists */}
+                    {invoice.shipment_status && (
+                      <div className="mb-4 p-3 bg-amber-900/30 rounded border border-amber-700">
+                        <p className="text-xs text-amber-400 mb-1">Status Pengiriman:</p>
+                        <p className="text-sm font-semibold text-amber-200 mb-2">
+                          {invoice.shipment_status === 'ready' ? '📦 Siap Kirim' : 
+                           invoice.shipment_status === 'planned' ? '📋 Rencana Kirim' : 
+                           invoice.shipment_status === 'completed' ? '✓ Selesai Kirim' : 
+                           invoice.shipment_status}
+                        </p>
+                        {invoice.shipment_status === 'planned' && invoice.expedisi_officer_name && (
+                          <div className="text-xs text-amber-300">
+                            <p>Petugas: {invoice.expedisi_officer_name}</p>
+                            {invoice.shipment_plan && (
+                              <p className="mt-1">Rencana: {invoice.shipment_plan}</p>
+                            )}
+                            {invoice.shipment_date && (
+                              <p className="mt-1">Tanggal: {new Date(invoice.shipment_date).toLocaleDateString('id-ID')}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Action buttons */}
+                    <div className="flex gap-3 flex-wrap">
+                      {/* Download PDF button */}
+                      <button
+                        onClick={() => handleDownloadPDF(invoice)}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                      >
+                        📄 Download PDF
+                      </button>
+
+                      {/* Share WhatsApp button */}
+                      <button
+                        onClick={() => handleShareWhatsApp(invoice)}
+                        className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+                      >
+                        💬 Share WhatsApp
+                      </button>
+
+                      {/* Edit button - only for draft/posted invoices */}
+                      {(invoice.status === 'draft' || invoice.status === 'posted') && (
+                        <button
+                          onClick={() => openEditModal(invoice)}
+                          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                        >
+                          ✎ Edit
+                        </button>
+                      )}
+                    </div>
                   </div>
                   );
                 })}
@@ -495,6 +530,40 @@ Terima kasih!
                             <p>Petugas: {invoice.faktur_officer_name}</p>
                             {invoice.faktur_notes && (
                               <p className="mt-1">Catatan: {invoice.faktur_notes}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Show shipment status if exists */}
+                    {invoice.shipment_status && (
+                      <div className="mb-4 p-3 bg-amber-900/30 rounded border border-amber-700">
+                        <p className="text-xs text-amber-400 mb-1">Status Pengiriman:</p>
+                        <p className="text-sm font-semibold text-amber-200 mb-2">
+                          {invoice.shipment_status === 'ready' ? '📦 Siap Kirim' : 
+                           invoice.shipment_status === 'planned' ? '📋 Rencana Kirim' : 
+                           invoice.shipment_status === 'completed' ? '✓ Selesai Kirim' : 
+                           invoice.shipment_status}
+                        </p>
+                        {invoice.shipment_status === 'planned' && invoice.expedisi_officer_name && (
+                          <div className="text-xs text-amber-300">
+                            <p>Petugas: {invoice.expedisi_officer_name}</p>
+                            {invoice.shipment_plan && (
+                              <p className="mt-1">Rencana: {invoice.shipment_plan}</p>
+                            )}
+                            {invoice.shipment_date && (
+                              <p className="mt-1">Tanggal: {new Date(invoice.shipment_date).toLocaleDateString('id-ID')}</p>
+                            )}
+                          </div>
+                        )}
+                        {invoice.shipment_status === 'completed' && (
+                          <div className="text-xs text-amber-300">
+                            {invoice.delivery_date && (
+                              <p>Tanggal Terkirim: {new Date(invoice.delivery_date).toLocaleDateString('id-ID')}</p>
+                            )}
+                            {invoice.delivery_notes && (
+                              <p className="mt-1">Catatan: {invoice.delivery_notes}</p>
                             )}
                           </div>
                         )}
