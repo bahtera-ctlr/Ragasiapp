@@ -148,32 +148,45 @@ export function exportInvoicesToCSV(invoices: any[]) {
 
 // EXPORT INVOICE ITEMS TO CSV (Special format for Fakturis)
 // Format: NIO, Nama Outlet, No Barang, Nama Barang, HJR, Dikson, Nett
-export function exportInvoiceItemsToCSV(invoice: any) {
+// Items should be passed in already - this function just formats them
+export function exportInvoiceItemsToCSV(invoice: any, orderItems?: any[]) {
   if (!invoice) {
     console.error('No invoice to export');
     return;
   }
 
+  console.log('Invoice object for export:', invoice);
+
   const outletName = invoice.outlet?.name || invoice.outlet_name || '-';
   const nio = invoice.outlet?.NIO || '-';
   const invoiceNumber = invoice.invoice_number || 'Unknown';
 
-  // Parse items from invoice
+  // Parse items from invoice or parameter
   let items: any[] = [];
   
-  if (Array.isArray(invoice.items)) {
+  // If items provided via parameter, use them
+  if (orderItems && Array.isArray(orderItems) && orderItems.length > 0) {
+    items = orderItems;
+    console.log('Using items from parameter:', items);
+  }
+  // Otherwise try to get items from invoice object
+  else if (Array.isArray(invoice.items) && invoice.items.length > 0) {
     items = invoice.items;
-  } else if (typeof invoice.items === 'string') {
+    console.log('Got items from invoice object:', items);
+  } else if (typeof invoice.items === 'string' && invoice.items) {
     try {
       items = JSON.parse(invoice.items);
+      console.log('Parsed items from JSON string:', items);
     } catch (e) {
       console.error('Error parsing items:', e);
-      items = [];
     }
   }
 
-  if (items.length === 0) {
-    console.error('No items in invoice');
+  console.log('Final items array:', items);
+
+  if (!items || items.length === 0) {
+    console.error('No items found in invoice');
+    alert('Invoice ini tidak memiliki items. Pastikan order sudah dibuat dengan item yang benar.');
     return;
   }
 

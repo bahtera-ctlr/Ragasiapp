@@ -253,6 +253,9 @@ export async function getInvoices(filters?: {
       // Continue without order items if fetch fails
     }
 
+    console.log('Orders fetched:', ordersData?.length, 'orders');
+    console.log('Sample order items:', ordersData?.[0]?.items);
+
     // Create order items map
     const orderItemsMap = new Map((ordersData || []).map(o => [o.id, o.items]));
 
@@ -264,6 +267,7 @@ export async function getInvoices(filters?: {
     }));
 
     console.log(`Fetched ${enhancedData.length} invoices with outlet data and items`);
+    console.log('Sample invoice with items:', enhancedData[0]);
     return { data: enhancedData, error: null };
   } catch (error) {
     console.error('Error in getInvoices:', error);

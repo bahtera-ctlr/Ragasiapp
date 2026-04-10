@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getInvoices, updateInvoiceFakturStatus } from '@/lib/orders';
 import { exportInvoiceItemsToCSV } from '@/lib/export';
+import { supabase } from '@/lib/supabase';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 
@@ -24,6 +25,44 @@ export default function FakturisDashboard() {
   const [fakturNotes, setFakturNotes] = useState('');
   const [savingFaktur, setSavingFaktur] = useState(false);
   const [fakturError, setFakturError] = useState('');
+
+  const [exportingInvoiceId, setExportingInvoiceId] = useState<string | null>(null);
+
+  const handleExportCSV = async (inv: any) => {
+    setExportingInvoiceId(inv.id);
+    try {
+      // Fetch order items
+      let orderItems: any[] = [];
+      if (inv.order_id) {
+        const { data: orderData, error } = await supabase
+          .from('orders')
+          .select('items')
+          .eq('id', inv.order_id)
+          .single();
+
+        if (!error && orderData?.items) {
+          console.log('Fetched order items:', orderData.items);
+          if (Array.isArray(orderData.items)) {
+            orderItems = orderData.items;
+          } else if (typeof orderData.items === 'string') {
+            try {
+              orderItems = JSON.parse(orderData.items);
+            } catch (e) {
+              console.error('Error parsing order items:', e);
+            }
+          }
+        }
+      }
+
+      // Export with items
+      exportInvoiceItemsToCSV(inv, orderItems);
+    } catch (err) {
+      console.error('Error exporting CSV:', err);
+      alert('Error saat export CSV. Lihat console untuk detail.');
+    } finally {
+      setExportingInvoiceId(null);
+    }
+  };
 
   useEffect(() => {
     if (loading || !hasAccess) return;
@@ -298,13 +337,14 @@ export default function FakturisDashboard() {
                   >
                     {invoice.faktur_status === 'terfaktur' ? '✓ Terfaktur (Edit)' : '✓ Mark as Terfaktur'}
                   </button>
-                  {invoice.status === 'released' && (
+                {invoice.status === 'released' && (
                     <button
-                      onClick={() => exportInvoiceItemsToCSV(invoice)}
-                      className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm"
+                      onClick={() => handleExportCSV(invoice)}
+                      disabled={exportingInvoiceId === invoice.id}
+                      className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Export invoice items to CSV"
                     >
-                      📥 Export CSV
+                      {exportingInvoiceId === invoice.id ? '⏳ Exporting...' : '📥 Export CSV'}
                     </button>
                   )}
                   <button
