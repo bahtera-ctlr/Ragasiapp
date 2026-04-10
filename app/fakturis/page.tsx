@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getInvoices, updateInvoiceFakturStatus } from '@/lib/orders';
+import { exportInvoiceItemsToCSV } from '@/lib/export';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 
@@ -297,6 +298,15 @@ export default function FakturisDashboard() {
                   >
                     {invoice.faktur_status === 'terfaktur' ? '✓ Terfaktur (Edit)' : '✓ Mark as Terfaktur'}
                   </button>
+                  {invoice.status === 'released' && (
+                    <button
+                      onClick={() => exportInvoiceItemsToCSV(invoice)}
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm"
+                      title="Export invoice items to CSV"
+                    >
+                      📥 Export CSV
+                    </button>
+                  )}
                   <button
                     onClick={() => router.push(`/fakturis/invoices/${invoice.id}`)}
                     className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm"

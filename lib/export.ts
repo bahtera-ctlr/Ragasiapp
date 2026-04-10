@@ -145,3 +145,96 @@ export function exportInvoicesToCSV(invoices: any[]) {
   link.click();
   document.body.removeChild(link);
 }
+
+// EXPORT INVOICE ITEMS TO CSV (Special format for Fakturis)
+// Format: NIO, Nama Outlet, No Barang, Nama Barang, HJR, Dikson, Nett
+export function exportInvoiceItemsToCSV(invoice: any) {
+  if (!invoice) {
+    console.error('No invoice to export');
+    return;
+  }
+
+  const outletName = invoice.outlet?.name || invoice.outlet_name || '-';
+  const nio = invoice.outlet?.NIO || '-';
+  const invoiceNumber = invoice.invoice_number || 'Unknown';
+
+  // Parse items from invoice
+  let items: any[] = [];
+  
+  if (Array.isArray(invoice.items)) {
+    items = invoice.items;
+  } else if (typeof invoice.items === 'string') {
+    try {
+      items = JSON.parse(invoice.items);
+    } catch (e) {
+      console.error('Error parsing items:', e);
+      items = [];
+    }
+  }
+
+  if (items.length === 0) {
+    console.error('No items in invoice');
+    return;
+  }
+
+  // Transform items to CSV format
+  const csvData = items.map((item: any) => {
+    const productId = item.product_id || item.id || '-';
+    const productName = item.product_name || item.nama_barang || item.name || '-';
+    const price = item.price || item.harga || 0;
+    const discount = item.discount || 0;
+    const qty = item.qty || item.quantity || 1;
+    
+    // Nett = (price * qty) - (discount if it's amount) OR price * qty * (1 - discount/100) if it's percentage
+    let nett = price * qty;
+    if (discount > 0) {
+      // Assume discount is in percentage
+      nett = nett * (1 - discount / 100);
+    }
+
+    return {
+      'NIO': nio,
+      'Nama Outlet': outletName,
+      'No Barang': productId,
+      'Nama Barang': productName,
+      'HJR': price.toLocaleString('id-ID'),
+      'Dikson': discount + '%',
+      'Nett': nett.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 }),
+    };
+  });
+
+  // Create CSV Header
+  const keys = ['NIO', 'Nama Outlet', 'No Barang', 'Nama Barang', 'HJR', 'Dikson', 'Nett'];
+  const csvHeader = keys.join(',');
+
+  // Create CSV Rows
+  const csvRows = csvData.map(row => {
+    return keys.map(key => {
+      const value = row[key as keyof typeof row];
+      if (value === null || value === undefined) {
+        return '';
+      }
+      if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value;
+    }).join(',');
+  });
+
+  // Combine header and rows
+  const csvContent = [csvHeader, ...csvRows].join('\n');
+
+  // Create Blob and Download
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  const fileName = `Invoice_${invoiceNumber}_${new Date().toISOString().split('T')[0]}.csv`;
+
+  link.setAttribute('href', url);
+  link.setAttribute('download', fileName);
+  link.style.visibility = 'hidden';
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
