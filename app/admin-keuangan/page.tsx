@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { logOut } from '@/lib/auth';
-import { getOutlets, exportOutletsToCSV } from '@/lib/export';
+import { getOutlets, exportOutletsToCSV, exportProductsToCSV } from '@/lib/export';
 import { uploadOutletData } from '@/lib/outlets';
+import { uploadStagingProducts, getStagingProducts, parseCsvData, StagingProduct } from '@/lib/products';
 import { getInvoices, releaseInvoice, rejectInvoice } from '@/lib/orders';
+import { getEmployees, createEmployee, updateEmployee, deleteEmployee, Employee } from '@/lib/employees';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 
@@ -17,7 +19,8 @@ export default function AdminKeuanganDashboard() {
 
   const [outlets, setOutlets] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
-  const [tab, setTab] = useState<'outlets' | 'outlet-import' | 'invoices'>('outlets');
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [tab, setTab] = useState<'outlets' | 'outlet-import' | 'invoices' | 'master-data-barang' | 'daftar-karyawan'>('outlets');
   const [isExporting, setIsExporting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
@@ -33,11 +36,41 @@ export default function AdminKeuanganDashboard() {
   const [outletUploadError, setOutletUploadError] = useState<string | null>(null);
   const [outletUploadSuccess, setOutletUploadSuccess] = useState<string | null>(null);
   
+  // Master Data Barang states
+  const [stagingProducts, setStagingProducts] = useState<any[]>([]);
+  const [uploadError, setUploadError] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState('');
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  
   // Modal state
   const [showDecisionModal, setShowDecisionModal] = useState(false);
   const [modalInvoice, setModalInvoice] = useState<any>(null);
   const [modalAction, setModalAction] = useState<'release' | 'reject' | null>(null);
   const [modalNotes, setModalNotes] = useState('');
+  
+  // Product search & pagination
+  const [productSearch, setProductSearch] = useState('');
+  const [productPage, setProductPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
+
+  // Employee states
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [employeePage, setEmployeePage] = useState(1);
+  const EMPLOYEE_ITEMS_PER_PAGE = 20;
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [showEmployeeModal, setShowEmployeeModal] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [employeeFormData, setEmployeeFormData] = useState({
+    nip: '',
+    nama_karyawan: '',
+    grade: '',
+    jabatan: '',
+  });
+  const [employeeFormError, setEmployeeFormError] = useState<string | null>(null);
+  const [employeeFormLoading, setEmployeeFormLoading] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     if (loading || !hasAccess) return;
@@ -77,6 +110,10 @@ export default function AdminKeuanganDashboard() {
         } else {
           setOutlets(result.data || []);
         }
+      } else if (tab === 'master-data-barang') {
+        await fetchStagingProducts();
+      } else if (tab === 'daftar-karyawan') {
+        await fetchEmployees();
       } else {
         const result = await getInvoices();
         if (result.error) {
@@ -89,6 +126,65 @@ export default function AdminKeuanganDashboard() {
       setIsLoading(false);
     }
   };
+
+  const fetchStagingProducts = async () => {
+    try {
+      setLoadingProducts(true);
+      const result = await getStagingProducts();
+      if (result.error) {
+        console.error('Error fetching products:', result.error);
+      } else {
+        setStagingProducts(result.data || []);
+        setProductPage(1); // Reset to page 1 when data is fetched
+      }
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
+  const fetchEmployees = async () => {
+    try {
+      setLoadingEmployees(true);
+      const result = await getEmployees();
+      if (result.error) {
+        console.error('Error fetching employees:', result.error);
+      } else {
+        setEmployees(result.data || []);
+        setEmployeePage(1); // Reset to page 1 when data is fetched
+      }
+    } finally {
+      setLoadingEmployees(false);
+    }
+  };
+
+  // Filter and paginate products
+  const filteredProducts = stagingProducts.filter(product => {
+    const searchLower = productSearch.toLowerCase();
+    return (
+      (product.nomor_barang?.toLowerCase().includes(searchLower)) ||
+      (product.nama_barang?.toLowerCase().includes(searchLower)) ||
+      (product.golongan_barang?.toLowerCase().includes(searchLower))
+    );
+  });
+
+  const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
+  const startIdx = (productPage - 1) * ITEMS_PER_PAGE;
+  const paginatedProducts = filteredProducts.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+
+  // Filter and paginate employees
+  const filteredEmployees = employees.filter(emp => {
+    const searchLower = employeeSearch.toLowerCase();
+    return (
+      (emp.nip?.toLowerCase().includes(searchLower)) ||
+      (emp.nama_karyawan?.toLowerCase().includes(searchLower)) ||
+      (emp.grade?.toLowerCase().includes(searchLower)) ||
+      (emp.jabatan?.toLowerCase().includes(searchLower))
+    );
+  });
+
+  const employeeTotalPages = Math.ceil(filteredEmployees.length / EMPLOYEE_ITEMS_PER_PAGE);
+  const employeeStartIdx = (employeePage - 1) * EMPLOYEE_ITEMS_PER_PAGE;
+  const paginatedEmployees = filteredEmployees.slice(employeeStartIdx, employeeStartIdx + EMPLOYEE_ITEMS_PER_PAGE);
 
   const handleExportOutlets = async () => {
     setIsExporting(true);
@@ -193,6 +289,126 @@ export default function AdminKeuanganDashboard() {
     // Load existing notes if invoice is already released or rejected
     setModalNotes(invoice.keuangan_notes || '');
     setShowDecisionModal(true);
+  };
+
+  const handleProductFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setUploadError('');
+    setUploadSuccess('');
+
+    try {
+      const text = await file.text();
+      const parseResult = parseCsvData(text);
+      
+      if (parseResult.error) {
+        setUploadError(parseResult.error);
+        return;
+      }
+
+      const uploadResult = await uploadStagingProducts(parseResult.data);
+      
+      if (uploadResult.error) {
+        setUploadError(uploadResult.error);
+      } else {
+        setUploadSuccess(`✓ Berhasil upload ${parseResult.data.length} produk!`);
+        setTimeout(() => {
+          fetchStagingProducts();
+        }, 500);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      setUploadError(errorMsg);
+      console.error('Upload error:', error);
+    } finally {
+      setUploading(false);
+      event.target.value = '';
+    }
+  };
+
+  const openEmployeeModal = async (employee?: Employee) => {
+    if (employee) {
+      setEditingEmployee(employee);
+      setEmployeeFormData({
+        nip: employee.nip,
+        nama_karyawan: employee.nama_karyawan,
+        grade: employee.grade || '',
+        jabatan: employee.jabatan || '',
+      });
+    } else {
+      setEditingEmployee(null);
+      setEmployeeFormData({
+        nip: '',
+        nama_karyawan: '',
+        grade: '',
+        jabatan: '',
+      });
+    }
+    setEmployeeFormError(null);
+    setShowEmployeeModal(true);
+  };
+
+  const closeEmployeeModal = () => {
+    setShowEmployeeModal(false);
+    setEditingEmployee(null);
+    setEmployeeFormData({
+      nip: '',
+      nama_karyawan: '',
+      grade: '',
+      jabatan: '',
+    });
+    setEmployeeFormError(null);
+  };
+
+  const handleSaveEmployee = async () => {
+    if (!employeeFormData.nip.trim() || !employeeFormData.nama_karyawan.trim()) {
+      setEmployeeFormError('NIP dan Nama Karyawan wajib diisi');
+      return;
+    }
+
+    setEmployeeFormLoading(true);
+    setEmployeeFormError(null);
+
+    try {
+      let result;
+      
+      if (editingEmployee) {
+        // Update existing employee
+        result = await updateEmployee(editingEmployee.id, employeeFormData);
+      } else {
+        // Create new employee
+        result = await createEmployee(employeeFormData);
+      }
+
+      if (result.error) {
+        setEmployeeFormError(result.error);
+      } else {
+        closeEmployeeModal();
+        fetchEmployees();
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      setEmployeeFormError(errorMsg);
+    } finally {
+      setEmployeeFormLoading(false);
+    }
+  };
+
+  const handleDeleteEmployee = async (id: number) => {
+    setDeletingId(id);
+    try {
+      const result = await deleteEmployee(id);
+      if (result.error) {
+        alert('Gagal menghapus karyawan: ' + result.error);
+      } else {
+        fetchEmployees();
+      }
+    } finally {
+      setDeletingId(null);
+      setDeleteConfirmId(null);
+    }
   };
 
   const closeDecisionModal = () => {
@@ -356,6 +572,36 @@ Generated: ${new Date().toLocaleString('id-ID')}
             }`}
           >
             📥 Import Outlet
+          </button>
+          <button
+            onClick={() => {
+              setTab('master-data-barang');
+              setOutletSearchQuery('');
+              setInvoiceSearchQuery('');
+              fetchData();
+            }}
+            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
+              tab === 'master-data-barang'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            📦 Data Barang
+          </button>
+          <button
+            onClick={() => {
+              setTab('daftar-karyawan');
+              setOutletSearchQuery('');
+              setInvoiceSearchQuery('');
+              fetchData();
+            }}
+            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
+              tab === 'daftar-karyawan'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            👥 Daftar Karyawan
           </button>
           <button
             onClick={() => {
@@ -731,6 +977,439 @@ Generated: ${new Date().toLocaleString('id-ID')}
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Master Data Barang Tab */}
+        {tab === 'master-data-barang' && (
+          <div>
+            <PageHeader
+              title="Master Data Barang"
+              subtitle="Kelola data produk/barang"
+            />
+
+            {/* Import Data Barang Section */}
+            <div className="bg-gray-900 border-2 border-dashed border-gray-700 rounded-lg p-8 mb-6">
+              <div className="text-center">
+                <p className="text-lg font-semibold mb-4">Upload Data Barang</p>
+                <p className="text-sm text-gray-400 mb-6">
+                  Format CSV: NB, GOL, PRO, POIN, Nama Barang, Komposisi, Principle, Sat, HJR, Stok<br/>
+                  <span className="text-xs text-gray-500 mt-2 block">
+                    NB = Nomor Barang (wajib unik)<br/>
+                    GOL = Golongan Barang<br/>
+                    PRO = Program<br/>
+                    POIN = Bobot Poin<br/>
+                    HJR = Harga Jual Ragasi (contoh: 50000 atau 50.000)<br/>
+                    SAT = Satuan (contoh: PCS, BOX, dll)
+                  </span>
+                  <span className="text-xs text-yellow-500 mt-3 block">⚠️ Data lama akan otomatis dihapus saat upload data baru</span>
+                </p>
+                
+                <label className="inline-block">
+                  <input
+                    type="file"
+                    accept=".csv,.txt"
+                    onChange={handleProductFileUpload}
+                    disabled={uploading}
+                    className="hidden"
+                  />
+                  <span className={`inline-block px-6 py-3 rounded font-semibold cursor-pointer transition-colors ${
+                    uploading
+                      ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}>
+                    {uploading ? '⏳ Uploading...' : '📤 Pilih File CSV'}
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            {uploadError && (
+              <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded mb-4 text-sm">
+                {uploadError}
+              </div>
+            )}
+
+            {uploadSuccess && (
+              <div className="bg-green-900 border border-green-700 text-green-200 px-4 py-3 rounded mb-4 text-sm">
+                {uploadSuccess}
+              </div>
+            )}
+
+            {/* Export Button */}
+            <button
+              onClick={() => exportProductsToCSV(stagingProducts)}
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition-colors mb-6"
+            >
+              📥 Export ke CSV
+            </button>
+
+            {/* Current Data Barang Info */}
+            <div className="bg-gray-900 rounded-lg border border-gray-800 p-6 mb-6">
+              <h3 className="text-lg font-semibold mb-4">Status Data Barang Saat Ini</h3>
+              <p className="text-gray-400">Total produk: <span className="text-white font-bold">{stagingProducts.length}</span></p>
+              <p className="text-xs text-gray-500 mt-4">
+                ℹ️ Setelah upload CSV, refresh halaman atau klik tab lain untuk melihat data barang terbaru.
+              </p>
+            </div>
+
+            {/* Search Bar */}
+            <div className="flex gap-3 mb-6">
+              <input
+                type="text"
+                placeholder="🔍 Cari berdasarkan NB, Nama Barang, atau Golongan..."
+                value={productSearch}
+                onChange={(e) => {
+                  setProductSearch(e.target.value);
+                  setProductPage(1);
+                }}
+                className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+              />
+              {productSearch && (
+                <button
+                  onClick={() => {
+                    setProductSearch('');
+                    setProductPage(1);
+                  }}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+                >
+                  ✕ Clear
+                </button>
+              )}
+            </div>
+
+            {/* Products Table */}
+            <div className="bg-gray-900 rounded-lg border border-gray-800 p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Daftar Data Barang</h3>
+                <div className="text-sm text-gray-400">
+                  {paginatedProducts.length > 0 ? `${startIdx + 1}-${Math.min(startIdx + ITEMS_PER_PAGE, filteredProducts.length)}` : '0'} dari {filteredProducts.length} barang {productSearch ? '(hasil pencarian)' : ''}
+                </div>
+              </div>
+              {loadingProducts ? (
+                <div className="text-center text-gray-400 py-8">Loading products...</div>
+              ) : filteredProducts.length === 0 ? (
+                <div className="text-center text-gray-400 py-8">
+                  {stagingProducts.length === 0 ? 'Belum ada data barang. Silakan upload file CSV di atas.' : 'Tidak ada barang yang sesuai dengan pencarian Anda.'}
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto mb-6">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-700 bg-gray-800">
+                          <th className="px-4 py-3 text-left text-gray-300">NB</th>
+                          <th className="px-4 py-3 text-left text-gray-300">GOL</th>
+                          <th className="px-4 py-3 text-left text-gray-300">PRO</th>
+                          <th className="px-4 py-3 text-left text-gray-300">POIN</th>
+                          <th className="px-4 py-3 text-left text-gray-300">Nama Barang</th>
+                          <th className="px-4 py-3 text-left text-gray-300">Komposisi</th>
+                          <th className="px-4 py-3 text-left text-gray-300">Principle</th>
+                          <th className="px-4 py-3 text-left text-gray-300">Sat</th>
+                          <th className="px-4 py-3 text-right text-gray-300">HJR</th>
+                          <th className="px-4 py-3 text-center text-gray-300">Stok</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedProducts.map((product, idx) => (
+                        <tr key={idx} className="border-b border-gray-700 hover:bg-gray-800 transition">
+                          <td className="px-4 py-3 text-white font-semibold">{product.nomor_barang}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{product.golongan_barang || '-'}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{product.program || '-'}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{product.bobot_poin || '-'}</td>
+                          <td className="px-4 py-3 text-white">{product.nama_barang}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{product.komposisi || '-'}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{product.principle || '-'}</td>
+                          <td className="px-4 py-3 text-gray-400">{product.satuan || '-'}</td>
+                          <td className="px-4 py-3 text-right font-semibold">
+                            {product.harga_jual_ragasi ? `Rp ${product.harga_jual_ragasi.toLocaleString('id-ID')}` : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-center">{product.stok || 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="flex justify-center items-center gap-2 mt-6 pb-4">
+                    <button
+                      onClick={() => setProductPage(p => Math.max(p - 1, 1))}
+                      disabled={productPage === 1}
+                      className="px-3 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      ← Previous
+                    </button>
+                    
+                    <div className="flex gap-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
+                        <button
+                          key={pageNum}
+                          onClick={() => setProductPage(pageNum)}
+                          className={`px-3 py-2 rounded ${
+                            productPage === pageNum
+                              ? 'bg-blue-500 text-white font-bold'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      ))}
+                    </div>
+                    
+                    <button
+                      onClick={() => setProductPage(p => Math.min(p + 1, totalPages))}
+                      disabled={productPage === totalPages}
+                      className="px-3 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Next →
+                    </button>
+                  </div>
+                )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Daftar Karyawan Tab */}
+        {tab === 'daftar-karyawan' && (
+          <div>
+            <PageHeader
+              title="Daftar Karyawan"
+              subtitle={`Total: ${employees.length} karyawan${employeeSearch ? ` (${filteredEmployees.length} hasil pencarian)` : ''}`}
+            />
+
+            {/* Add Employee Button */}
+            <div className="mb-6">
+              <button
+                onClick={() => openEmployeeModal()}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors"
+              >
+                ➕ Tambah Karyawan
+              </button>
+            </div>
+
+            {/* Search Bar */}
+            <div className="mb-6">
+              {filteredEmployees.length > 0 && (
+                <input
+                  type="text"
+                  placeholder="🔍 Cari berdasarkan NIP, Nama, Grade, atau Jabatan..."
+                  value={employeeSearch}
+                  onChange={(e) => {
+                    setEmployeeSearch(e.target.value);
+                    setEmployeePage(1);
+                  }}
+                  className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+                />
+              )}
+              {employeeSearch && (
+                <button
+                  onClick={() => {
+                    setEmployeeSearch('');
+                    setEmployeePage(1);
+                  }}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors mt-2"
+                >
+                  ✕ Clear
+                </button>
+              )}
+            </div>
+
+            {/* Employees Table */}
+            <div className="bg-gray-900 rounded-lg border border-gray-800 p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Daftar Karyawan</h3>
+                <div className="text-sm text-gray-400">
+                  {paginatedEmployees.length > 0 ? `${employeeStartIdx + 1}-${Math.min(employeeStartIdx + EMPLOYEE_ITEMS_PER_PAGE, filteredEmployees.length)}` : '0'} dari {filteredEmployees.length} karyawan {employeeSearch ? '(hasil pencarian)' : ''}
+                </div>
+              </div>
+              {loadingEmployees ? (
+                <div className="text-center text-gray-400 py-8">Loading employees...</div>
+              ) : filteredEmployees.length === 0 ? (
+                <div className="text-center text-gray-400 py-8">
+                  {employees.length === 0 ? 'Belum ada data karyawan. Klik tombol "Tambah Karyawan" di atas untuk menambahkan.' : 'Tidak ada karyawan yang sesuai dengan pencarian Anda.'}
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto mb-6">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-700 bg-gray-800">
+                          <th className="px-4 py-3 text-left text-gray-300">NIP</th>
+                          <th className="px-4 py-3 text-left text-gray-300">Nama Karyawan</th>
+                          <th className="px-4 py-3 text-left text-gray-300">Grade</th>
+                          <th className="px-4 py-3 text-left text-gray-300">Jabatan</th>
+                          <th className="px-4 py-3 text-center text-gray-300">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedEmployees.map((emp) => (
+                        <tr key={emp.id} className="border-b border-gray-700 hover:bg-gray-800 transition">
+                          <td className="px-4 py-3 text-white font-semibold">{emp.nip}</td>
+                          <td className="px-4 py-3 text-white">{emp.nama_karyawan}</td>
+                          <td className="px-4 py-3 text-gray-400">{emp.grade || '-'}</td>
+                          <td className="px-4 py-3 text-gray-400">{emp.jabatan || '-'}</td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex gap-2 justify-center">
+                              <button
+                                onClick={() => openEmployeeModal(emp)}
+                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                              >
+                                ✏️ Edit
+                              </button>
+                              {deleteConfirmId === emp.id ? (
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => handleDeleteEmployee(emp.id)}
+                                    disabled={deletingId === emp.id}
+                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors disabled:opacity-50"
+                                  >
+                                    Yakin?
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteConfirmId(null)}
+                                    className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
+                                  >
+                                    Batal
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setDeleteConfirmId(emp.id)}
+                                  className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
+                                >
+                                  🗑️ Hapus
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination Controls */}
+                  {employeeTotalPages > 1 && (
+                    <div className="flex justify-center items-center gap-2 mt-6 pb-4">
+                      <button
+                        onClick={() => setEmployeePage(p => Math.max(p - 1, 1))}
+                        disabled={employeePage === 1}
+                        className="px-3 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        ← Previous
+                      </button>
+                      
+                      <div className="flex gap-1">
+                        {Array.from({ length: employeeTotalPages }, (_, i) => i + 1).map(pageNum => (
+                          <button
+                            key={pageNum}
+                            onClick={() => setEmployeePage(pageNum)}
+                            className={`px-3 py-2 rounded ${
+                              employeePage === pageNum
+                                ? 'bg-blue-500 text-white font-bold'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        ))}
+                      </div>
+                      
+                      <button
+                        onClick={() => setEmployeePage(p => Math.min(p + 1, employeeTotalPages))}
+                        disabled={employeePage === employeeTotalPages}
+                        className="px-3 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Employee Modal */}
+        {showEmployeeModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 w-full max-w-md">
+              <h2 className="text-xl font-bold mb-6 text-white">
+                {editingEmployee ? 'Edit Karyawan' : 'Tambah Karyawan Baru'}
+              </h2>
+              
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-sm text-gray-300 mb-2">NIP *</label>
+                  <input
+                    type="text"
+                    value={employeeFormData.nip}
+                    onChange={(e) => setEmployeeFormData({...employeeFormData, nip: e.target.value})}
+                    disabled={editingEmployee !== null}
+                    className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded text-white focus:border-blue-500 focus:outline-none disabled:opacity-50"
+                    placeholder="Masukkan NIP"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm text-gray-300 mb-2">Nama Karyawan *</label>
+                  <input
+                    type="text"
+                    value={employeeFormData.nama_karyawan}
+                    onChange={(e) => setEmployeeFormData({...employeeFormData, nama_karyawan: e.target.value})}
+                    className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded text-white focus:border-blue-500 focus:outline-none"
+                    placeholder="Masukkan nama karyawan"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm text-gray-300 mb-2">Grade</label>
+                  <input
+                    type="text"
+                    value={employeeFormData.grade}
+                    onChange={(e) => setEmployeeFormData({...employeeFormData, grade: e.target.value})}
+                    className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded text-white focus:border-blue-500 focus:outline-none"
+                    placeholder="Contoh: Grade A, Level 3"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm text-gray-300 mb-2">Jabatan</label>
+                  <input
+                    type="text"
+                    value={employeeFormData.jabatan}
+                    onChange={(e) => setEmployeeFormData({...employeeFormData, jabatan: e.target.value})}
+                    className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded text-white focus:border-blue-500 focus:outline-none"
+                    placeholder="Contoh: Manager, Staff"
+                  />
+                </div>
+              </div>
+
+              {employeeFormError && (
+                <div className="p-3 bg-red-900/20 border border-red-700 rounded text-red-400 mb-4">{employeeFormError}</div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleSaveEmployee}
+                  disabled={employeeFormLoading}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                >
+                  {employeeFormLoading ? 'Menyimpan...' : 'Simpan'}
+                </button>
+                <button
+                  onClick={closeEmployeeModal}
+                  disabled={employeeFormLoading}
+                  className="flex-1 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                >
+                  Batal
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </main>

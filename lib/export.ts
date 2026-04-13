@@ -258,3 +258,62 @@ export function exportInvoiceItemsToCSV(invoice: any, orderItems?: any[], outlet
   link.click();
   document.body.removeChild(link);
 }
+
+// EXPORT PRODUCTS TO CSV
+// Format: NB, GOL, PRO, POIN, Nama Barang, Komposisi, Principle, Sat, HJR, Stok
+export function exportProductsToCSV(products: any[]) {
+  if (!products || products.length === 0) {
+    console.error('No products to export');
+    alert('Tidak ada data barang untuk di-export');
+    return;
+  }
+
+  // Transform products to CSV format matching the import format
+  const csvData = products.map((product: any) => ({
+    'NB': product.nomor_barang || '-',
+    'GOL': product.golongan_barang || '-',
+    'PRO': product.program || '-',
+    'POIN': product.bobot_poin || '-',
+    'Nama Barang': product.nama_barang || '-',
+    'Komposisi': product.komposisi || '-',
+    'Principle': product.principle || '-',
+    'Sat': product.satuan || '-',
+    'HJR': product.harga_jual_ragasi ? `${product.harga_jual_ragasi}` : '-',
+    'Stok': product.stok || '-',
+  }));
+
+  // Create CSV Header
+  const keys = ['NB', 'GOL', 'PRO', 'POIN', 'Nama Barang', 'Komposisi', 'Principle', 'Sat', 'HJR', 'Stok'];
+  const csvHeader = keys.join(',');
+
+  // Create CSV Rows
+  const csvRows = csvData.map(row => {
+    return keys.map(key => {
+      const value = row[key as keyof typeof row];
+      if (value === null || value === undefined) {
+        return '';
+      }
+      if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value;
+    }).join(',');
+  });
+
+  // Combine header and rows
+  const csvContent = [csvHeader, ...csvRows].join('\n');
+
+  // Create Blob and Download
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  const fileName = `Master_Data_Barang_${new Date().toISOString().split('T')[0]}.csv`;
+
+  link.setAttribute('href', url);
+  link.setAttribute('download', fileName);
+  link.style.visibility = 'hidden';
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}

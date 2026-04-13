@@ -40,7 +40,7 @@ export default function AdminLogistikInPage() {
   const { user } = useAuth();
   
   // Tab state
-  const [currentTab, setCurrentTab] = useState<'packing' | 'data-barang'>('packing');
+  const [currentTab, setCurrentTab] = useState<'packing'>('packing');
   
   // Packing states
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -52,12 +52,7 @@ export default function AdminLogistikInPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   
-  // Data Barang states
-  const [stagingProducts, setStagingProducts] = useState<any[]>([]);
-  const [uploadError, setUploadError] = useState('');
-  const [uploading, setUploading] = useState(false);
-  const [uploadSuccess, setUploadSuccess] = useState('');
-  const [loadingProducts, setLoadingProducts] = useState(false);
+
 
   useEffect(() => {
     console.log('useEffect triggered - user:', user);
@@ -69,8 +64,6 @@ export default function AdminLogistikInPage() {
     
     if (currentTab === 'packing') {
       fetchInvoices();
-    } else if (currentTab === 'data-barang') {
-      fetchStagingProducts();
     }
   }, [user, router, currentTab]);
 
@@ -159,86 +152,6 @@ export default function AdminLogistikInPage() {
     });
   };
 
-  const fetchStagingProducts = async () => {
-    try {
-      setLoadingProducts(true);
-      setUploadError('');
-      const { data, error } = await getStagingProducts();
-      
-      if (error) {
-        setUploadError(error);
-      } else {
-        setStagingProducts(data || []);
-      }
-    } catch (err) {
-      console.error('Error fetching staging products:', err);
-      setUploadError(String(err));
-    } finally {
-      setLoadingProducts(false);
-    }
-  };
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setUploading(true);
-      setUploadError('');
-      setUploadSuccess('');
-
-      // Read file
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          const content = e.target?.result as string;
-          
-          // Parse CSV
-          const { data: products, error: parseError } = parseCsvData(content);
-          
-          if (parseError) {
-            setUploadError(parseError);
-            return;
-          }
-
-          if (products.length === 0) {
-            setUploadError('Tidak ada data produk yang valid ditemukan di file');
-            return;
-          }
-
-          // Upload to Supabase
-          const { error: uploadErr } = await uploadStagingProducts(products);
-          
-          if (uploadErr) {
-            setUploadError(uploadErr);
-          } else {
-            setUploadSuccess(`✓ Berhasil upload ${products.length} produk! Data lama otomatis terhapus.`);
-            // Refresh the list
-            await fetchStagingProducts();
-            // Reset file input
-            event.target.value = '';
-          }
-        } catch (err) {
-          console.error('Error processing file:', err);
-          setUploadError(String(err));
-        } finally {
-          setUploading(false);
-        }
-      };
-      
-      reader.onerror = () => {
-        setUploadError('Gagal membaca file');
-        setUploading(false);
-      };
-      
-      reader.readAsText(file);
-    } catch (err) {
-      console.error('Error:', err);
-      setUploadError(String(err));
-      setUploading(false);
-    }
-  };
-
   const releasedCount = invoices.filter(inv => inv.logistik_in_status !== 'terpacking').length;
   const packedCount = invoices.filter(inv => inv.logistik_in_status === 'terpacking').length;
 
@@ -280,16 +193,7 @@ export default function AdminLogistikInPage() {
           >
             📦 Manajemen Packing
           </button>
-          <button
-            onClick={() => setCurrentTab('data-barang')}
-            className={`py-3 px-6 font-medium transition-colors ${
-              currentTab === 'data-barang'
-                ? 'border-b-2 border-blue-500 text-blue-400'
-                : 'text-gray-400 hover:text-gray-300'
-            }`}
-          >
-            📊 Data Barang
-          </button>
+
         </div>
 
         {/* Manajemen Packing Tab */}
@@ -502,106 +406,6 @@ export default function AdminLogistikInPage() {
           </div>
         )}
 
-        {/* Data Barang Tab */}
-        {currentTab === 'data-barang' && (
-          <div>
-            <PageHeader
-              title="Data Barang"
-              subtitle={`Total produk di staging: ${stagingProducts.length}`}
-            />
-
-            {/* Upload Section */}
-            <div className="bg-gray-900 border-2 border-dashed border-gray-700 rounded-lg p-8 mb-6">
-              <div className="text-center">
-                <p className="text-lg font-semibold mb-4">Upload Data Barang</p>
-                <p className="text-sm text-gray-400 mb-6">
-                  Format CSV: NB, GOL, PRO, POIN, Nama Barang, Komposisi, Principle, Sat (Satuan Barang), HJR (Harga Jual Ragasi), Stok<br/>
-                  <span className="text-xs text-yellow-500 mt-2 block">⚠️ NB (Nomor Barang) & Nama Barang wajib diisi untuk export ke Zahir</span>
-                  Data lama akan otomatis dihapus saat upload data baru
-                </p>
-                
-                <label className="inline-block">
-                  <input
-                    type="file"
-                    accept=".csv,.txt"
-                    onChange={handleFileUpload}
-                    disabled={uploading}
-                    className="hidden"
-                  />
-                  <span className={`inline-block px-6 py-3 rounded font-semibold cursor-pointer transition-colors ${
-                    uploading
-                      ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
-                  }`}>
-                    {uploading ? '⏳ Uploading...' : '📤 Pilih File CSV'}
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            {uploadError && (
-              <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded mb-4 text-sm">
-                {uploadError}
-              </div>
-            )}
-
-            {uploadSuccess && (
-              <div className="bg-green-900 border border-green-700 text-green-200 px-4 py-3 rounded mb-4 text-sm">
-                {uploadSuccess}
-              </div>
-            )}
-
-            {/* Products List */}
-            <div className="bg-gray-900 rounded-lg overflow-hidden border border-gray-800">
-              {loadingProducts ? (
-                <div className="text-center py-8 text-gray-400">Loading...</div>
-              ) : stagingProducts.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">
-                  Belum ada data barang. Upload file CSV untuk menambahkan.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-gray-700 bg-gray-800 sticky top-0">
-                        <th className="px-2 py-3 text-left">No</th>
-                        <th className="px-2 py-3 text-left min-w-[100px]">NB</th>
-                        <th className="px-2 py-3 text-left min-w-[120px]">Nama Barang</th>
-                        <th className="px-2 py-3 text-left">GOL</th>
-                        <th className="px-2 py-3 text-left">PRO</th>
-                        <th className="px-2 py-3 text-right">Poin</th>
-                        <th className="px-2 py-3 text-left">Komposisi</th>
-                        <th className="px-2 py-3 text-left">Principle</th>
-                        <th className="px-2 py-3 text-left">Satuan</th>
-                        <th className="px-2 py-3 text-right">HJR</th>
-                        <th className="px-2 py-3 text-center">Stok</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {stagingProducts.map((product, idx) => (
-                        <tr key={product.id} className="border-b border-gray-700 hover:bg-gray-800 transition">
-                          <td className="px-2 py-3 text-gray-400">{idx + 1}</td>
-                          <td className="px-2 py-3 font-semibold text-blue-400">{product.nomor_barang}</td>
-                          <td className="px-2 py-3 font-semibold">{product.nama_barang}</td>
-                          <td className="px-2 py-3 text-gray-400 text-xs">{product.golongan_barang || '-'}</td>
-                          <td className="px-2 py-3 text-gray-400 text-xs">{product.program || '-'}</td>
-                          <td className="px-2 py-3 text-right text-gray-400">{product.bobot_poin || '-'}</td>
-                          <td className="px-2 py-3 text-gray-400 text-xs">{product.komposisi || '-'}</td>
-                          <td className="px-2 py-3 text-gray-400 text-xs">{product.principle || '-'}</td>
-                          <td className="px-2 py-3 text-left text-gray-400 text-xs">{product.satuan || '-'}</td>
-                          <td className="px-2 py-3 text-right font-semibold">
-                            {product.harga_jual_ragasi ? `Rp ${product.harga_jual_ragasi.toLocaleString('id-ID')}` : '-'}
-                          </td>
-                          <td className="px-2 py-3 text-center">{product.stok || '-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Packing Modal */}

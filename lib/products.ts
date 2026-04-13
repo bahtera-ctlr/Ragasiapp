@@ -284,7 +284,8 @@ export async function getStagingProducts() {
     const { data, error } = await supabase
       .from('products')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .range(0, 9999); // Fetch up to 10,000 rows (Supabase default is 1000)
 
     if (error) {
       console.error('Error fetching products:', error);
