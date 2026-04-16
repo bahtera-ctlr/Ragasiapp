@@ -15,6 +15,7 @@ type Outlet = {
   current_saldo: number | null;
   me: string | null;
   nio: string | null;
+  due: number | null;
 };
 
 type Product = {
@@ -219,6 +220,63 @@ function handleSelectProduct(product: Product) {
   setShowProductDropdown(false);
 }
 
+function calculateSimilarity(str1: string, str2: string): number {
+  const s1 = str1.toLowerCase().trim();
+  const s2 = str2.toLowerCase().trim();
+  
+  // Exact match
+  if (s1 === s2) return 100;
+  
+  // One is substring of the other (harus minimal 70% panjang)
+  if (s1.includes(s2) || s2.includes(s1)) {
+    const minLen = Math.min(s1.length, s2.length);
+    const maxLen = Math.max(s1.length, s2.length);
+    const ratio = minLen / maxLen;
+    if (ratio >= 0.7) return 85;
+  }
+  
+  // Check common words (minimal 2 kata sama atau 1 kata > 4 char)
+  const words1 = s1.split(/\s+/);
+  const words2 = s2.split(/\s+/);
+  let commonWords = 0;
+  
+  for (let w1 of words1) {
+    for (let w2 of words2) {
+      if (w1.length > 4 && w2.length > 4) {
+        // Untuk kata panjang, harus match lebih ketat
+        if (w1.startsWith(w2) || w2.startsWith(w1)) {
+          if (Math.min(w1.length, w2.length) / Math.max(w1.length, w2.length) >= 0.75) {
+            commonWords++;
+          }
+        }
+      } else if (w1.length > 3 && w1 === w2) {
+        commonWords++;
+      }
+    }
+  }
+  
+  if (commonWords >= 2) return 80;
+  if (commonWords === 1 && words1.length > 2) return 75;
+  
+  // Levenshtein-like distance (untuk typo kecil)
+  let matches = 0;
+  const longer = s1.length > s2.length ? s1 : s2;
+  const shorter = s1.length > s2.length ? s2 : s1;
+  
+  // Hanya cocokkan jika panjangnya tidak terlalu beda (max 30% beda)
+  if (Math.abs(s1.length - s2.length) / Math.max(s1.length, s2.length) > 0.3) {
+    return 0;
+  }
+  
+  for (let char of shorter) {
+    if (longer.includes(char)) matches++;
+  }
+  
+  const similarity = (matches / longer.length) * 100;
+  // Hanya return jika score tinggi (80+)
+  return similarity >= 80 ? similarity : Math.min(similarity, 70);
+}
+
 function handleBulkAdd() {
   if (!selectedOutlet) {
     showNotification("Pilih outlet terlebih dahulu", "error");
@@ -230,7 +288,7 @@ function handleBulkAdd() {
     .map((l) => l.replace(/•/g, "").trim())
     .filter((l) => l.length > 0 && !l.toLowerCase().includes("list"));
 
-  const notFound: { name: string; qty: number }[] = [];
+  const notFound: { name: string; qty: number; suggestions: string[] }[] = [];
   let successCount = 0;
 
   lines.forEach((line) => {
@@ -246,10 +304,27 @@ function handleBulkAdd() {
       .split(qtyMatch[0])[0]
       .trim();
 
-    // Cari produk dengan includes
-    const found = products.find((p) =>
+    // Cari produk dengan exact match dulu
+    let found = products.find((p) =>
       p.name.toLowerCase().includes(productName.toLowerCase())
     );
+
+    // Jika tidak ada exact match, cari dengan similarity tinggi (80%+)
+    if (!found) {
+      const scored = products
+        .map((p) => ({
+          product: p,
+          score: calculateSimilarity(productName, p.name),
+        }))
+        .filter((p) => p.score >= 80)
+        .sort((a, b) => b.score - a.score);
+
+      if (scored.length > 0) {
+        found = scored[0].product;
+        // Tambah notif bahwa ada autocorrection
+        showNotification(`Produk "${productName}" cocok dengan "${found.name}"`, "info");
+      }
+    }
 
     if (found) {
       setCart((prev) => {
@@ -292,7 +367,18 @@ function handleBulkAdd() {
       });
       successCount++;
     } else {
-      notFound.push({ name: productName, qty });
+      // Cari suggestions untuk produk yang tidak ditemukan (score 65-79%)
+      const suggestions = products
+        .map((p) => ({
+          name: p.name,
+          score: calculateSimilarity(productName, p.name),
+        }))
+        .filter((p) => p.score >= 65 && p.score < 80)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3)
+        .map((p) => p.name);
+
+      notFound.push({ name: productName, qty, suggestions });
     }
   });
 
@@ -310,7 +396,16 @@ function handleBulkAdd() {
       }));
       return [...prev, ...customItems];
     });
-    showNotification(`${notFound.length} item tidak tersedia dan masuk ke 'Recap Barang Kosong'`, "info");
+
+    let message = `${notFound.length} item tidak ditemukan (Masuk ke Recap Barang Kosong):\n`;
+    notFound.forEach((item) => {
+      message += `\n• "${item.name}"`;
+      if (item.suggestions.length > 0) {
+        message += `\n  Mirip dengan: ${item.suggestions.join(", ")}`;
+      }
+    });
+
+    showNotification(message, "info");
   }
 
   if (successCount > 0) {
@@ -594,14 +689,23 @@ function handleAddItem() {
       pdf.setFont("", "normal");
       pdf.text(`Nama Outlet: ${outlet.name}`, margin, yPosition);
       yPosition += lineHeight;
-      pdf.text(`Tempo: ${outlet.top_hari} hari`, margin, yPosition);
-      yPosition += lineHeight;
+      if (outlet.me) {
+        pdf.text(`ME: ${outlet.me}`, margin, yPosition);
+        yPosition += lineHeight;
+      }
       if (outlet.cluster) {
         pdf.text(`Cluster: ${outlet.cluster}`, margin, yPosition);
         yPosition += lineHeight;
       }
-      if (outlet.me) {
-        pdf.text(`ME: ${outlet.me}`, margin, yPosition);
+      pdf.text(`TOP: ${outlet.top_hari} hari`, margin, yPosition);
+      yPosition += lineHeight;
+      const limitTersedia = (outlet.limit_rupiah || 0) - (outlet.current_saldo || 0);
+      pdf.text(`Limit Tersedia: Rp ${limitTersedia.toLocaleString()}`, margin, yPosition);
+      yPosition += lineHeight;
+      pdf.text(`Saldo Piutang: Rp ${(outlet.current_saldo || 0).toLocaleString()}`, margin, yPosition);
+      yPosition += lineHeight;
+      if (outlet.due) {
+        pdf.text(`DUE: ${outlet.due} hari`, margin, yPosition);
         yPosition += lineHeight;
       }
       yPosition += 3;
@@ -694,9 +798,16 @@ function handleAddItem() {
 
     let message = `*SALES ORDER*\n\n`;
     message += `📍 Outlet: ${outlet.name}\n`;
-    message += `📦 Cluster: ${outlet.cluster}\n`;
-    message += `⏱️ Tempo: ${outlet.top_hari} hari\n`;
-    message += `👤 ME: ${outlet.me || "-"}\n`;
+    message += `� ME: ${outlet.me || "-"}\n`;
+    message += `📦 Cluster: ${outlet.cluster || "-"}\n`;
+    message += `⏱️ TOP: ${outlet.top_hari} hari\n`;
+    const limitTersedia = (outlet.limit_rupiah || 0) - (outlet.current_saldo || 0);
+    message += `💳 Limit Tersedia: Rp ${limitTersedia.toLocaleString()}\n`;
+    message += `💰 Saldo Piutang: Rp ${(outlet.current_saldo || 0).toLocaleString()}\n`;
+    if (outlet.due) {
+      message += `📅 DUE: ${outlet.due} hari\n`;
+    }
+    message += `\n`;
     message += `\n*DETAIL PRODUK:*\n`;
 
     items.forEach((item, index) => {
@@ -823,12 +934,18 @@ console.log("FILTERED:", filteredProducts.length);
         {/* OUTLET INFO */}
         {selectedOutlet && (
           <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg space-y-1">
-            <div>Cluster: {selectedOutlet.cluster}</div>
-            <div>Tempo: {selectedOutlet.top_hari} hari</div>
+            <div><strong>ME:</strong> {selectedOutlet.me || '-'}</div>
+            <div><strong>Cluster:</strong> {selectedOutlet.cluster || '-'}</div>
+            <div><strong>TOP:</strong> {selectedOutlet.top_hari || '-'} hari</div>
             <div>
-              Saldo: Rp {sisaLimit.toLocaleString()}
+              <strong>Limit Tersedia:</strong> Rp {((selectedOutlet.limit_rupiah || 0) - (selectedOutlet.current_saldo || 0)).toLocaleString()}
             </div>
-            <div>ME: {selectedOutlet.me}</div>
+            <div>
+              <strong>Saldo Piutang:</strong> Rp {(selectedOutlet.current_saldo || 0).toLocaleString()}
+            </div>
+            {selectedOutlet.due && (
+              <div><strong>DUE:</strong> {selectedOutlet.due} hari</div>
+            )}
           </div>
         )}
 
@@ -960,7 +1077,14 @@ console.log("FILTERED:", filteredProducts.length);
           {itemName} x {item.qty}
           {item.isCustom && <span className="ml-2 text-xs bg-yellow-200 px-2 py-1 rounded">Custom</span>}
         </div>
-        {itemGol && <div className="text-sm text-gray-600">Gol: <span className="font-semibold">{itemGol}</span></div>}
+        {itemGol && (
+          <div className="text-sm text-gray-600">
+            Gol: <span className="font-semibold">{itemGol}</span>
+            {!item.isCustom && item.product?.stock !== undefined && (
+              <span className="ml-3">Stok: <span className="font-semibold">{item.product.stock}</span></span>
+            )}
+          </div>
+        )}
         <div>Diskon: {item.discount}%</div>
         <div>
           Subtotal: Rp {subtotal.toLocaleString()}
@@ -1382,6 +1506,9 @@ console.log("FILTERED:", filteredProducts.length);
                       {itemGol && (
                         <div className="text-sm text-gray-600 mt-1">
                           Gol: <span className="font-semibold">{itemGol || "-"}</span>
+                          {!item.isCustom && item.product?.stock !== undefined && (
+                            <span className="ml-3">Stok: <span className="font-semibold">{item.product.stock}</span></span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1432,18 +1559,6 @@ console.log("FILTERED:", filteredProducts.length);
       </div>
 
       <div className="flex gap-3 mt-6">
-        <button
-          onClick={handleDownloadPDF}
-          className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 font-semibold flex items-center justify-center gap-2"
-        >
-          📥 Download PDF
-        </button>
-        <button
-          onClick={handleShareWhatsApp}
-          className="flex-1 bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 font-semibold flex items-center justify-center gap-2"
-        >
-          💬 Share WhatsApp
-        </button>
         <button
           onClick={() => setResultModal(null)}
           className="flex-1 bg-gray-600 text-white px-4 py-3 rounded-lg hover:bg-gray-700 font-semibold"

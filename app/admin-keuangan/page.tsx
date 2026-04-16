@@ -49,6 +49,13 @@ export default function AdminKeuanganDashboard() {
   const [modalAction, setModalAction] = useState<'release' | 'reject' | null>(null);
   const [modalNotes, setModalNotes] = useState('');
   
+  // Invoice detail modal state
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [detailInvoice, setDetailInvoice] = useState<any>(null);
+  
+  // Invoice filter state
+  const [invoiceFilter, setInvoiceFilter] = useState<'pending' | 'released' | 'rejected'>('pending');
+  
   // Product search & pagination
   const [productSearch, setProductSearch] = useState('');
   const [productPage, setProductPage] = useState(1);
@@ -291,6 +298,23 @@ export default function AdminKeuanganDashboard() {
     setShowDecisionModal(true);
   };
 
+  const closeDecisionModal = () => {
+    setShowDecisionModal(false);
+    setModalInvoice(null);
+    setModalAction(null);
+    setModalNotes('');
+  };
+
+  const openDetailModal = (invoice: any) => {
+    setDetailInvoice(invoice);
+    setShowDetailModal(true);
+  };
+
+  const closeDetailModal = () => {
+    setShowDetailModal(false);
+    setDetailInvoice(null);
+  };
+
   const handleProductFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -411,13 +435,6 @@ export default function AdminKeuanganDashboard() {
     }
   };
 
-  const closeDecisionModal = () => {
-    setShowDecisionModal(false);
-    setModalInvoice(null);
-    setModalAction(null);
-    setModalNotes('');
-  };
-
   const handleDownloadPDF = (invoice: any) => {
     // Generate invoice content
     const orderDate = new Date(invoice.orders?.created_at || invoice.created_at);
@@ -499,6 +516,17 @@ Generated: ${new Date().toLocaleString('id-ID')}
   // Filter invoices based on search query
   const filteredInvoices = invoices.filter(invoice => {
     const query = invoiceSearchQuery.toLowerCase().trim();
+    
+    // Filter by status first
+    if (invoiceFilter === 'pending') {
+      if (invoice.status !== 'posted' && invoice.status !== 'draft') return false;
+    } else if (invoiceFilter === 'released') {
+      if (invoice.status !== 'released') return false;
+    } else if (invoiceFilter === 'rejected') {
+      if (invoice.status !== 'rejected') return false;
+    }
+    
+    // Then filter by search query
     if (!query) return true;
     
     return (
@@ -759,6 +787,49 @@ Generated: ${new Date().toLocaleString('id-ID')}
               subtitle={`Total: ${invoices.length} invoice${invoiceSearchQuery ? ` (${filteredInvoices.length} hasil pencarian)` : ''}`}
             />
 
+            {/* Invoice Status Filter Tabs */}
+            <div className="flex gap-3 mb-6 border-b border-gray-800">
+              <button
+                onClick={() => {
+                  setInvoiceFilter('pending');
+                  setInvoiceSearchQuery('');
+                }}
+                className={`py-3 px-4 font-medium transition-colors border-b-2 ${
+                  invoiceFilter === 'pending'
+                    ? 'text-blue-400 border-blue-400'
+                    : 'text-gray-400 border-transparent hover:text-gray-300'
+                }`}
+              >
+                📋 Pending
+              </button>
+              <button
+                onClick={() => {
+                  setInvoiceFilter('released');
+                  setInvoiceSearchQuery('');
+                }}
+                className={`py-3 px-4 font-medium transition-colors border-b-2 ${
+                  invoiceFilter === 'released'
+                    ? 'text-green-400 border-green-400'
+                    : 'text-gray-400 border-transparent hover:text-gray-300'
+                }`}
+              >
+                ✓ Released
+              </button>
+              <button
+                onClick={() => {
+                  setInvoiceFilter('rejected');
+                  setInvoiceSearchQuery('');
+                }}
+                className={`py-3 px-4 font-medium transition-colors border-b-2 ${
+                  invoiceFilter === 'rejected'
+                    ? 'text-red-400 border-red-400'
+                    : 'text-gray-400 border-transparent hover:text-gray-300'
+                }`}
+              >
+                ✗ Rejected
+              </button>
+            </div>
+
             {/* Search Bar */}
             <div className="mb-6">
               <input
@@ -795,17 +866,21 @@ Generated: ${new Date().toLocaleString('id-ID')}
                   return (
                   <div
                     key={invoice.id}
-                    className="bg-gray-900 border border-gray-800 rounded-lg p-6"
+                    onClick={() => openDetailModal(invoice)}
+                    className="bg-gray-900 border border-gray-800 rounded-lg p-4 cursor-pointer hover:border-blue-600 transition-colors"
                   >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="text-lg font-semibold">
-                          {invoice.outlet?.name || invoice.outlet_id} - {formattedDate} {formattedTime}
+                    {/* Header Section */}
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <h3 className="text-base font-semibold text-white">
+                          {invoice.outlet?.name || invoice.outlet_id}
                         </h3>
-                        <p className="text-gray-400 text-sm">Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Order: {invoice.order_id?.slice(0, 8).toUpperCase()} • {formattedDate} {formattedTime}
+                        </p>
                       </div>
                       <span
-                        className={`px-3 py-1 rounded-full text-sm font-medium ${
+                        className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ml-2 ${
                           invoice.status === 'draft'
                             ? 'bg-gray-700 text-gray-200'
                             : invoice.status === 'posted'
@@ -820,156 +895,117 @@ Generated: ${new Date().toLocaleString('id-ID')}
                         }`}
                       >
                         {invoice.status === 'draft'
-                          ? 'Draft (Marketing Review)'
+                          ? '📝 Draft'
                           : invoice.status === 'posted'
-                          ? 'Posted (Pending Release)'
+                          ? '⏳ Posting'
                           : invoice.status === 'released'
-                          ? 'Released'
+                          ? '✓ Released'
                           : invoice.status === 'rejected'
-                          ? 'Rejected'
+                          ? '✗ Rejected'
                           : invoice.status === 'paid'
-                          ? 'Paid'
+                          ? '💰 Paid'
                           : 'Cancelled'}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
-                      <div>
-                        <p className="text-gray-400">Amount</p>
-                        <p className="text-white font-semibold">
-                          Rp {invoice.amount?.toLocaleString('id-ID') || 0}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-400">Created</p>
-                        <p className="text-white">
-                          {new Date(invoice.created_at).toLocaleDateString('id-ID')}
-                        </p>
-                      </div>
+                    {/* Amount Section */}
+                    <div className="mb-3 pb-3 border-b border-gray-800">
+                      <p className="text-white font-bold text-lg">
+                        Rp {invoice.amount?.toLocaleString('id-ID') || 0}
+                      </p>
                     </div>
 
-                    {/* Show notes if exists */}
-                    {invoice.keuangan_notes && (
-                      <div className="mb-4 p-3 bg-gray-800 rounded border border-gray-700">
-                        <p className="text-xs text-gray-400 mb-1">Catatan Admin Keuangan:</p>
-                        <p className="text-sm text-gray-300">{invoice.keuangan_notes}</p>
-                      </div>
-                    )}
+                    {/* Status Badges - Compact */}
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {/* Packing Status Badge */}
+                      {invoice.logistik_in_status && (
+                        <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${
+                          invoice.logistik_in_status === 'terpacking'
+                            ? 'bg-blue-900 text-blue-200'
+                            : 'bg-gray-800 text-gray-300'
+                        }`}>
+                          {invoice.logistik_in_status === 'terpacking' ? '📦 Packed' : '⏳ Packing'}
+                        </span>
+                      )}
+                      
+                      {/* Faktur Status Badge */}
+                      {invoice.faktur_status && (
+                        <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${
+                          invoice.faktur_status === 'terfaktur'
+                            ? 'bg-purple-900 text-purple-200'
+                            : 'bg-gray-800 text-gray-300'
+                        }`}>
+                          {invoice.faktur_status === 'terfaktur' ? '📄 Invoiced' : '⏳ Invoicing'}
+                        </span>
+                      )}
+                      
+                      {/* Shipment Status Badge */}
+                      {invoice.shipment_status && (
+                        <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${
+                          invoice.shipment_status === 'ready'
+                            ? 'bg-amber-900 text-amber-200'
+                            : invoice.shipment_status === 'planned'
+                            ? 'bg-orange-900 text-orange-200'
+                            : invoice.shipment_status === 'completed'
+                            ? 'bg-green-900 text-green-200'
+                            : 'bg-gray-800 text-gray-300'
+                        }`}>
+                          {invoice.shipment_status === 'ready' 
+                            ? '🚚 Ready' 
+                            : invoice.shipment_status === 'planned' 
+                            ? '📋 Planned' 
+                            : invoice.shipment_status === 'completed' 
+                            ? '✓ Shipped' 
+                            : 'Pending'}
+                        </span>
+                      )}
+                    </div>
 
-                    {/* Packing Status */}
-                    {invoice.logistik_in_status && (
-                      <div className="mb-4 p-3 bg-blue-900/30 rounded border border-blue-700">
-                        <p className="text-blue-400 text-xs mb-1">Status Packing:</p>
-                        <p className="text-blue-200 font-semibold mb-2 text-sm">
-                          {invoice.logistik_in_status === 'terpacking' ? '✓ Sudah Terpacking' : 'Menunggu Packing'}
-                        </p>
-                        {invoice.logistik_in_status === 'terpacking' && invoice.packing_officer_name && (
-                          <div className="text-xs text-blue-300">
-                            <p>Petugas: {invoice.packing_officer_name}</p>
-                            {invoice.packing_notes && (
-                              <p className="mt-1">Catatan: {invoice.packing_notes}</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Faktur Status */}
-                    {invoice.faktur_status && (
-                      <div className="mb-4 p-3 bg-purple-900/30 rounded border border-purple-700">
-                        <p className="text-purple-400 text-xs mb-1">Status Faktur:</p>
-                        <p className="text-purple-200 font-semibold mb-2 text-sm">
-                          {invoice.faktur_status === 'terfaktur' ? '✓ Sudah Terfaktur' : 'Menunggu Faktur'}
-                        </p>
-                        {invoice.faktur_status === 'terfaktur' && invoice.faktur_officer_name && (
-                          <div className="text-xs text-purple-300">
-                            <p>Petugas: {invoice.faktur_officer_name}</p>
-                            {invoice.faktur_notes && (
-                              <p className="mt-1">Catatan: {invoice.faktur_notes}</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Shipment Status */}
-                    {invoice.shipment_status && (
-                      <div className="mb-4 p-3 bg-amber-900/30 rounded border border-amber-700">
-                        <p className="text-amber-400 text-xs mb-1">Status Pengiriman:</p>
-                        <p className="text-amber-200 font-semibold mb-2 text-sm">
-                          {invoice.shipment_status === 'ready' ? '📦 Siap Kirim' : 
-                           invoice.shipment_status === 'planned' ? '📋 Rencana Kirim' : 
-                           invoice.shipment_status === 'completed' ? '✓ Selesai Kirim' : 
-                           invoice.shipment_status}
-                        </p>
-                        {invoice.shipment_status === 'planned' && invoice.expedisi_officer_name && (
-                          <div className="text-xs text-amber-300">
-                            <p>Petugas: {invoice.expedisi_officer_name}</p>
-                            {invoice.shipment_plan && (
-                              <p className="mt-1">Rencana: {invoice.shipment_plan}</p>
-                            )}
-                            {invoice.shipment_date && (
-                              <p className="mt-1">Tanggal: {new Date(invoice.shipment_date).toLocaleDateString('id-ID')}</p>
-                            )}
-                          </div>
-                        )}
-                        {invoice.shipment_status === 'completed' && (
-                          <div className="text-xs text-amber-300">
-                            {invoice.delivery_date && (
-                              <p>Tanggal Terkirim: {new Date(invoice.delivery_date).toLocaleDateString('id-ID')}</p>
-                            )}
-                            {invoice.delivery_notes && (
-                              <p className="mt-1">Catatan: {invoice.delivery_notes}</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Action buttons - show for all invoices except paid and cancelled */}
-                    {(invoice.status !== 'paid' && invoice.status !== 'cancelled') && (
-                      <div className="space-y-3">
-                        {/* Download button */}
+                    {/* Action buttons - show only in pending filter */}
+                    {invoiceFilter === 'pending' && (invoice.status !== 'paid' && invoice.status !== 'cancelled') && (
+                      <div className="flex gap-2 pt-3 border-t border-gray-800">
                         <button
-                          onClick={() => handleDownloadPDF(invoice)}
-                          className="w-full font-medium py-2 px-4 rounded-lg transition-colors text-white bg-red-600 hover:bg-red-700"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadPDF(invoice);
+                          }}
+                          className="flex-1 font-medium py-1.5 px-3 rounded text-xs transition-colors text-white bg-red-600 hover:bg-red-700"
                         >
-                          📥 Download Invoice
+                          📥 Download
                         </button>
                         
-                        {/* Release/Reject buttons */}
-                        <div className="flex gap-3">
-                          <button
-                            onClick={() => openDecisionModal(invoice, 'release')}
-                            disabled={releaseLoading}
-                            className={`flex-1 font-medium py-2 px-4 rounded-lg transition-colors text-white ${
-                              invoice.status === 'released'
-                                ? 'bg-blue-600 hover:bg-blue-700'
-                                : 'bg-green-600 hover:bg-green-700 disabled:bg-gray-600'
-                            }`}
-                          >
-                            {releaseLoading && modalInvoice?.id === invoice.id && modalAction === 'release'
-                              ? 'Processing...'
-                              : invoice.status === 'released'
-                              ? '✓ Released (Edit Catatan)'
-                              : '✓ Release'}
-                          </button>
-                          <button
-                            onClick={() => openDecisionModal(invoice, 'reject')}
-                            disabled={releaseLoading}
-                            className={`flex-1 font-medium py-2 px-4 rounded-lg transition-colors text-white ${
-                              invoice.status === 'rejected'
-                                ? 'bg-orange-600 hover:bg-orange-700'
-                                : 'bg-red-600 hover:bg-red-700 disabled:bg-gray-600'
-                            }`}
-                          >
-                            {releaseLoading && modalInvoice?.id === invoice.id && modalAction === 'reject'
-                              ? 'Processing...'
-                              : invoice.status === 'rejected'
-                              ? '✗ Rejected (Edit Catatan)'
-                              : '✗ Reject'}
-                          </button>
-                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDecisionModal(invoice, 'release');
+                          }}
+                          disabled={releaseLoading}
+                          className={`flex-1 font-medium py-1.5 px-3 rounded text-xs transition-colors text-white ${
+                            invoice.status === 'released'
+                              ? 'bg-blue-600 hover:bg-blue-700'
+                              : 'bg-green-600 hover:bg-green-700 disabled:bg-gray-600'
+                          }`}
+                        >
+                          {releaseLoading && modalInvoice?.id === invoice.id && modalAction === 'release'
+                            ? '...'
+                            : '✓ Release'}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDecisionModal(invoice, 'reject');
+                          }}
+                          disabled={releaseLoading}
+                          className={`flex-1 font-medium py-1.5 px-3 rounded text-xs transition-colors text-white ${
+                            invoice.status === 'rejected'
+                              ? 'bg-orange-600 hover:bg-orange-700'
+                              : 'bg-red-600 hover:bg-red-700 disabled:bg-gray-600'
+                          }`}
+                        >
+                          {releaseLoading && modalInvoice?.id === invoice.id && modalAction === 'reject'
+                            ? '...'
+                            : '✗ Reject'}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1511,6 +1547,169 @@ Generated: ${new Date().toLocaleString('id-ID')}
           </div>
         </div>
       )}
+
+      {/* Detail Modal */}
+      {showDetailModal && detailInvoice && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-white">
+                  {detailInvoice.outlet?.name || detailInvoice.outlet_id}
+                </h2>
+                <p className="text-gray-400 text-sm mt-2">
+                  Invoice: {detailInvoice.invoice_number} • Order: {detailInvoice.order_id?.slice(0, 8).toUpperCase()}
+                </p>
+              </div>
+              <button
+                onClick={closeDetailModal}
+                className="text-gray-400 hover:text-white text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Amount */}
+            <div className="bg-gray-800 rounded-lg p-4 mb-6 border border-gray-700">
+              <div className="flex justify-between items-end">
+                <div>
+                  <p className="text-gray-400 text-sm mb-1">Total Amount</p>
+                  <p className="text-white font-bold text-2xl">
+                    Rp {detailInvoice.amount?.toLocaleString('id-ID') || 0}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-gray-400 text-sm mb-1">Status</p>
+                  <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                    detailInvoice.status === 'draft'
+                      ? 'bg-gray-700 text-gray-200'
+                      : detailInvoice.status === 'posted'
+                      ? 'bg-yellow-900 text-yellow-200'
+                      : detailInvoice.status === 'released'
+                      ? 'bg-green-900 text-green-200'
+                      : detailInvoice.status === 'rejected'
+                      ? 'bg-red-900 text-red-200'
+                      : 'bg-gray-700 text-gray-200'
+                  }`}>
+                    {detailInvoice.status === 'draft' ? '📝 Draft' : 
+                     detailInvoice.status === 'posted' ? '⏳ Posting' : 
+                     detailInvoice.status === 'released' ? '✓ Released' : 
+                     detailInvoice.status === 'rejected' ? '✗ Rejected' : 'Unknown'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Status Badges */}
+            <div className="mb-6">
+              <h3 className="text-white font-semibold mb-3">Status Proses</h3>
+              <div className="flex flex-wrap gap-2">
+                {detailInvoice.logistik_in_status && (
+                  <span className={`px-3 py-2 rounded text-sm font-semibold ${
+                    detailInvoice.logistik_in_status === 'terpacking'
+                      ? 'bg-blue-900 text-blue-200'
+                      : 'bg-gray-800 text-gray-300'
+                  }`}>
+                    {detailInvoice.logistik_in_status === 'terpacking' ? '✓ Packed' : '⏳ Packing'}
+                  </span>
+                )}
+                {detailInvoice.faktur_status && (
+                  <span className={`px-3 py-2 rounded text-sm font-semibold ${
+                    detailInvoice.faktur_status === 'terfaktur'
+                      ? 'bg-purple-900 text-purple-200'
+                      : 'bg-gray-800 text-gray-300'
+                  }`}>
+                    {detailInvoice.faktur_status === 'terfaktur' ? '✓ Invoiced' : '⏳ Invoicing'}
+                  </span>
+                )}
+                {detailInvoice.shipment_status && (
+                  <span className={`px-3 py-2 rounded text-sm font-semibold ${
+                    detailInvoice.shipment_status === 'ready'
+                      ? 'bg-amber-900 text-amber-200'
+                      : detailInvoice.shipment_status === 'planned'
+                      ? 'bg-orange-900 text-orange-200'
+                      : detailInvoice.shipment_status === 'completed'
+                      ? 'bg-green-900 text-green-200'
+                      : 'bg-gray-800 text-gray-300'
+                  }`}>
+                    {detailInvoice.shipment_status === 'ready' ? '🚚 Ready' :
+                     detailInvoice.shipment_status === 'planned' ? '📋 Planned' :
+                     detailInvoice.shipment_status === 'completed' ? '✓ Shipped' : 'Pending'}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Notes Section */}
+            <div className="space-y-4">
+              {/* Keuangan Notes */}
+              {detailInvoice.keuangan_notes && (
+                <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
+                  <h4 className="text-blue-400 font-semibold mb-2">💰 Catatan Admin Keuangan</h4>
+                  <p className="text-blue-200 text-sm">{detailInvoice.keuangan_notes}</p>
+                </div>
+              )}
+
+              {/* Packing Notes */}
+              {detailInvoice.packing_officer_name && (
+                <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
+                  <h4 className="text-blue-400 font-semibold mb-2">📦 Catatan Packing (Gudang)</h4>
+                  <div className="space-y-1 text-blue-200 text-sm">
+                    <p><span className="text-blue-300">Petugas:</span> {detailInvoice.packing_officer_name}</p>
+                    {detailInvoice.packing_notes && (
+                      <p><span className="text-blue-300">Catatan:</span> {detailInvoice.packing_notes}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Faktur Notes */}
+              {detailInvoice.faktur_officer_name && (
+                <div className="bg-purple-900/20 border border-purple-700 rounded-lg p-4">
+                  <h4 className="text-purple-400 font-semibold mb-2">📄 Catatan Fakturis</h4>
+                  <div className="space-y-1 text-purple-200 text-sm">
+                    <p><span className="text-purple-300">Petugas:</span> {detailInvoice.faktur_officer_name}</p>
+                    {detailInvoice.faktur_notes && (
+                      <p><span className="text-purple-300">Catatan:</span> {detailInvoice.faktur_notes}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Expedisi Notes */}
+              {detailInvoice.expedisi_officer_name && (
+                <div className="bg-amber-900/20 border border-amber-700 rounded-lg p-4">
+                  <h4 className="text-amber-400 font-semibold mb-2">🚚 Catatan Expedisi</h4>
+                  <div className="space-y-1 text-amber-200 text-sm">
+                    <p><span className="text-amber-300">Petugas:</span> {detailInvoice.expedisi_officer_name}</p>
+                    {detailInvoice.shipment_plan && (
+                      <p><span className="text-amber-300">Rencana Kirim:</span> {detailInvoice.shipment_plan}</p>
+                    )}
+                    {detailInvoice.shipment_date && (
+                      <p><span className="text-amber-300">Tanggal Kirim:</span> {new Date(detailInvoice.shipment_date).toLocaleDateString('id-ID')}</p>
+                    )}
+                    {detailInvoice.delivery_notes && (
+                      <p><span className="text-amber-300">Catatan Pengiriman:</span> {detailInvoice.delivery_notes}</p>
+                    )}
+                    {detailInvoice.delivery_date && (
+                      <p><span className="text-amber-300">Tanggal Terkirim:</span> {new Date(detailInvoice.delivery_date).toLocaleDateString('id-ID')}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Close Button */}
+            <button
+              onClick={closeDetailModal}
+              className="w-full mt-6 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
