@@ -267,7 +267,10 @@ export async function getInvoices(filters?: {
     }));
 
     console.log(`Fetched ${enhancedData.length} invoices with outlet data and items`);
-    console.log('Sample invoice with items:', enhancedData[0]);
+    if (enhancedData.length > 0) {
+      console.log('Sample outlet data:', enhancedData[0]?.outlet);
+      console.log('Sample invoice items:', enhancedData[0]?.items);
+    }
     return { data: enhancedData, error: null };
   } catch (error) {
     console.error('Error in getInvoices:', error);
@@ -652,18 +655,70 @@ export async function getReleasedInvoices() {
       return { data: [], error: null };
     }
 
-    // Fetch outlet data
-    const outletIds = [...new Set(invoicesData.map(inv => inv.outlet_id))];
-    const { data: outletsData } = await supabase
-      .from('outlets')
-      .select('*');
+    // Fetch order items from the orders table, also include order outlet_id for fallback matching
+    const orderIds = [...new Set(invoicesData.map(inv => inv.order_id))].filter(Boolean);
+    const { data: ordersData, error: ordersError } = await supabase
+      .from('orders')
+      .select('id, items, outlet_id')
+      .in('id', orderIds);
 
-    // Merge outlet data
-    const outletMap = new Map((outletsData || []).map(o => [o.id, o]));
-    const enhancedData = invoicesData.map(invoice => ({
-      ...invoice,
-      outlet: outletMap.get(invoice.outlet_id) || null
-    }));
+    if (ordersError) {
+      console.error('Error fetching order items for released invoices:', ordersError);
+    }
+
+    const outletIds = [...new Set(invoicesData.map(inv => inv.outlet_id))].filter(Boolean);
+    const orderOutletIds = [...new Set((ordersData || []).map(order => order.outlet_id))].filter(Boolean);
+
+    // Fetch specific outlets by id or by nio to handle refreshed outlet data
+    let outletsData: any[] = [];
+    let outletsError: any = null;
+
+    if (outletIds.length > 0) {
+      const [byIdResult, byNioResult] = await Promise.all([
+        supabase.from('outlets').select('id, nio, name, me').in('id', outletIds),
+        supabase.from('outlets').select('id, nio, name, me').in('nio', outletIds)
+      ]);
+
+      outletsData = [...(byIdResult.data || []), ...(byNioResult.data || [])];
+      outletsError = byIdResult.error || byNioResult.error;
+    }
+
+    if (orderOutletIds.length > 0) {
+      const [byIdResult, byNioResult] = await Promise.all([
+        supabase.from('outlets').select('id, nio, name, me').in('id', orderOutletIds),
+        supabase.from('outlets').select('id, nio, name, me').in('nio', orderOutletIds)
+      ]);
+
+      outletsData = [...outletsData, ...(byIdResult.data || []), ...(byNioResult.data || [])];
+      outletsError = outletsError || byIdResult.error || byNioResult.error;
+    }
+
+    // Deduplicate outlets by id
+    const outletMap = new Map((outletsData || []).map((o: any) => [o.id, o]));
+    const outletMapByNio = new Map((outletsData || []).map((o: any) => [String(o.nio), o]));
+
+    if (outletsError) {
+      console.error('Error fetching outlets:', outletsError);
+    }
+
+    // Merge outlet data with fallback: invoice outlet_id -> id or nio, then order outlet_id -> id or nio
+    const orderItemsMap = new Map((ordersData || []).map(order => [order.id, order.items]));
+    const orderOutletMap = new Map((ordersData || []).map(order => [order.id, order.outlet_id]));
+
+    const enhancedData = invoicesData.map(invoice => {
+      const invoiceOutletId = invoice.outlet_id;
+      const orderOutletId = orderOutletMap.get(invoice.order_id);
+
+      const outletFromInvoiceId = outletMap.get(invoiceOutletId) || outletMapByNio.get(String(invoiceOutletId));
+      const outletFromOrderId = orderOutletId ? outletMap.get(orderOutletId) || outletMapByNio.get(String(orderOutletId)) : null;
+      const outlet = outletFromInvoiceId || outletFromOrderId || null;
+
+      return {
+        ...invoice,
+        outlet,
+        items: orderItemsMap.get(invoice.order_id) || []
+      };
+    });
 
     return { data: enhancedData, error: null };
   } catch (error) {
@@ -717,19 +772,29 @@ export async function updateInvoicePackingStatus(
   invoiceId: string,
   packingOfficerName: string,
   packingNotes: string,
-  verifiedBy: string
+  verifiedBy: string,
+  expedisiOfficerName?: string,
+  shipmentStatus?: string
 ) {
   try {
+    const updateData: any = {
+      logistik_in_status: 'terpacking',
+      packing_officer_name: packingOfficerName,
+      packing_notes: packingNotes,
+      packing_verified_by: verifiedBy,
+      packing_verified_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // If expedisi officer is provided, set shipment status and officer
+    if (expedisiOfficerName) {
+      updateData.shipment_status = shipmentStatus || 'planned';
+      updateData.expedisi_officer_name = expedisiOfficerName;
+    }
+
     const { data, error } = await supabase
       .from('invoices')
-      .update({
-        logistik_in_status: 'terpacking',
-        packing_officer_name: packingOfficerName,
-        packing_notes: packingNotes,
-        packing_verified_by: verifiedBy,
-        packing_verified_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', invoiceId)
       .select();
 

@@ -6,6 +6,7 @@ ALTER TABLE public.outlets ADD COLUMN IF NOT EXISTS nio BIGINT UNIQUE;
 ALTER TABLE public.outlets ADD COLUMN IF NOT EXISTS kelompok VARCHAR(100);
 ALTER TABLE public.outlets ADD COLUMN IF NOT EXISTS limit_rupiah NUMERIC(15, 2);
 ALTER TABLE public.outlets ADD COLUMN IF NOT EXISTS top_hari INTEGER;
+ALTER TABLE public.outlets ADD COLUMN IF NOT EXISTS due INTEGER;
 
 -- Add indexes untuk performance
 CREATE INDEX IF NOT EXISTS idx_outlets_nio ON public.outlets(nio);

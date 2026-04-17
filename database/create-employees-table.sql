@@ -16,11 +16,11 @@ ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS employees_read_admin ON public.employees;
 DROP POLICY IF EXISTS employees_write_admin ON public.employees;
 
--- RLS Policy: Admin keuangan dan super_admin bisa baca semua
+-- RLS Policy: Admin keuangan, super_admin, dan fakturis bisa baca semua
 CREATE POLICY employees_read_admin ON public.employees
   FOR SELECT
   USING (
-    (SELECT role FROM public.users WHERE id = auth.uid()) IN ('admin_keuangan', 'super_admin')
+    (SELECT role FROM public.users WHERE id = auth.uid()) IN ('admin_keuangan', 'super_admin', 'fakturis')
   );
 
 -- RLS Policy: Admin keuangan dan super_admin bisa create, update, delete

@@ -8,6 +8,7 @@ export interface OutletData {
   kelompok?: string;
   limit_rupiah?: number;
   top_hari?: number;
+  due?: number;
   current_saldo?: number;
 }
 
@@ -131,6 +132,11 @@ export function parseOutletCSV(csvContent: string): OutletData[] {
       || h.includes('tempo pembayaran') || h.includes('payment term')
       || h === 'top' || h === 'tempo' || clean.includes('hari') || /top|tempo|hari/.test(clean);
   });
+  const dueIdx = header.findIndex(h => {
+    const clean = h.replace(/\s+/g, ' ').toLowerCase();
+    return h.includes('due') || h.includes('jatuh tempo') || h.includes('due date') || h.includes('due hari')
+      || h === 'due' || /due|jatuh tempo|tempo jatuh/.test(clean);
+  });
   const saldoIdx = header.findIndex(h => {
     const clean = h.replace(/\s+/g, ' ').toLowerCase();
     return h.includes('saldo') || h.includes('current saldo') || h.includes('sisa saldo')
@@ -138,13 +144,16 @@ export function parseOutletCSV(csvContent: string): OutletData[] {
       || h === 'saldo' || h === 'balance' || clean.includes('saldo') || /saldo|balance/.test(clean);
   });
 
-  console.log(`📍 Column indices: NIO=${nioIdx}, Name=${nameIdx}, ME=${meIdx}, Cluster=${clusterIdx}, Kelompok=${kelompokIdx}, Limit=${limitIdx}, TOP=${topIdx}, Saldo=${saldoIdx}`);
+  console.log(`📍 Column indices: NIO=${nioIdx}, Name=${nameIdx}, ME=${meIdx}, Cluster=${clusterIdx}, Kelompok=${kelompokIdx}, Limit=${limitIdx}, TOP=${topIdx}, DUE=${dueIdx}, Saldo=${saldoIdx}`);
   
   // Warn if critical columns not found
   if (limitIdx === -1) {
     console.warn(`⚠️ LIMIT/CREDIT column tidak ditemukan! Coba cek nama kolom di CSV.`);
     console.warn(`📋 Available columns: ${header.join(' | ')}`);
     console.warn(`💡 Column names should contain: 'limit', 'plafon', 'credit limit', 'credit', atau 'limit rupiah'`);
+  }
+  if (dueIdx === -1) {
+    console.warn(`⚠️ DUE column tidak ditemukan. Jika tidak ada, field DUE akan kosong.`);
   }
   if (saldoIdx === -1) {
     console.warn(`⚠️ Saldo/Balance column tidak ditemukan. Available: ${header.join(', ')}`);
@@ -182,6 +191,7 @@ export function parseOutletCSV(csvContent: string): OutletData[] {
 
     const nioValue = nioIdx !== -1 && cells[nioIdx] ? cells[nioIdx].trim() : undefined;
     
+    const dueValue = dueIdx !== -1 && cells[dueIdx] ? parseInt(cells[dueIdx].replace(/\D/g, ''), 10) : undefined;
     const outlet: OutletData = {
       nio: nioValue,  // Store as string to support "16010001-1" format
       name: nameIdx !== -1 && cells[nameIdx] ? cells[nameIdx] : `Outlet ${i}`,
@@ -191,6 +201,7 @@ export function parseOutletCSV(csvContent: string): OutletData[] {
       // For limit_rupiah: parse if available, allow 0
       limit_rupiah: limitIdx !== -1 && cells[limitIdx] ? parseNumber(cells[limitIdx]) : undefined,
       top_hari: topIdx !== -1 && cells[topIdx] ? (parseInt(cells[topIdx]) || undefined) : undefined,
+      due: !Number.isNaN(dueValue) ? dueValue : undefined,
       // For current_saldo: parse if available, allow 0
       current_saldo: saldoIdx !== -1 && cells[saldoIdx] ? parseNumber(cells[saldoIdx]) : undefined,
     };
@@ -209,6 +220,7 @@ export function parseOutletCSV(csvContent: string): OutletData[] {
     me: o.me, 
     limit: o.limit_rupiah, 
     top: o.top_hari,
+    due: o.due,
     saldo: o.current_saldo 
   })));
 
@@ -260,6 +272,7 @@ export async function uploadOutletData(csvContent: string) {
       limit_rupiah: outlet.limit_rupiah,
       current_saldo: outlet.current_saldo,
       top_hari: outlet.top_hari,
+      due: outlet.due,
     }));
 
     console.log(`📤 Sample data to send to RPC (first 3):`, jsonData.slice(0, 3));

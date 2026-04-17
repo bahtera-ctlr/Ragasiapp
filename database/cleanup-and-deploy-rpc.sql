@@ -79,7 +79,7 @@ BEGIN
 
   -- STEP 6: Insert new outlets from JSON array
   BEGIN
-    INSERT INTO public.outlets (nio, name, me, cluster, kelompok, limit_rupiah, top_hari, current_saldo, updated_at)
+    INSERT INTO public.outlets (nio, name, me, cluster, kelompok, limit_rupiah, top_hari, due, current_saldo, updated_at)
     SELECT
       (item->>'nio')::TEXT as nio,
       (item->>'name')::TEXT,
@@ -94,6 +94,10 @@ BEGIN
         WHEN (item->>'top_hari') IS NULL OR (item->>'top_hari') = '' THEN NULL
         ELSE (item->>'top_hari')::INTEGER
       END as top_hari,
+      CASE
+        WHEN (item->>'due') IS NULL OR (item->>'due') = '' THEN NULL
+        ELSE (item->>'due')::INTEGER
+      END as due,
       CASE 
         WHEN (item->>'current_saldo') IS NULL OR (item->>'current_saldo') = '' THEN NULL
         ELSE (item->>'current_saldo')::NUMERIC(15,2)

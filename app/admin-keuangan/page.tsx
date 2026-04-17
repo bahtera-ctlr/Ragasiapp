@@ -691,6 +691,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
                         <th className="px-6 py-3 text-left text-sm font-medium">Nama</th>
                         <th className="px-6 py-3 text-left text-sm font-medium">Cluster</th>
                         <th className="px-6 py-3 text-left text-sm font-medium">Tempo</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">DUE</th>
                         <th className="px-6 py-3 text-left text-sm font-medium">Credit Limit</th>
                         <th className="px-6 py-3 text-left text-sm font-medium">Saldo</th>
                       </tr>
@@ -702,6 +703,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
                           <td className="px-6 py-4 text-sm">{outlet.name}</td>
                           <td className="px-6 py-4 text-sm">{outlet.cluster || '-'}</td>
                           <td className="px-6 py-4 text-sm">{outlet.top_hari || '-'} hari</td>
+                          <td className="px-6 py-4 text-sm">{outlet.due != null ? `${outlet.due} hari` : '-'}</td>
                           <td className="px-6 py-4 text-sm">Rp {outlet.limit_rupiah?.toLocaleString('id-ID') || '-'}</td>
                           <td className="px-6 py-4 text-sm">Rp {outlet.current_saldo?.toLocaleString('id-ID') || '-'}</td>
                         </tr>
@@ -727,12 +729,12 @@ Generated: ${new Date().toLocaleString('id-ID')}
               <div className="text-center">
                 <p className="text-lg font-semibold mb-4">Upload Data Outlet</p>
                 <p className="text-sm text-gray-400 mb-6">
-                  Format CSV: NIO, NAMA OUTLET, ME, CLUSTER, KELOMPOK, LIMIT, TOP, SALDO<br/>
-                  <span className="text-xs text-gray-500 mt-2 block">
-                    NIO = Nomor Identifikasi Outlet (wajib unik)<br/>
-                    LIMIT = Limit dalam rupiah (contoh: 1000000 atau 1.000.000)<br/>
-                    TOP = Tempo pembayaran dalam hari (contoh: 30)<br/>
-                    SALDO = Sisa saldo dalam rupiah (contoh: 500000)
+                    Format CSV: NIO, NAMA OUTLET, ME, CLUSTER, KELOMPOK, LIMIT, TOP, DUE, SALDO<br/>
+                    <span className="text-xs text-gray-500 mt-2 block">
+                      NIO = Nomor Identifikasi Outlet (wajib unik)<br/>
+                      LIMIT = Limit dalam rupiah (contoh: 1000000 atau 1.000.000)<br/>
+                      TOP = Tempo pembayaran dalam hari (contoh: 30)<br/>
+                      DUE = DUE dalam hari (contoh: 30)<br/>
                   </span>
                   <span className="text-xs text-yellow-500 mt-3 block">⚠️ Data lama akan otomatis dihapus saat upload data baru</span>
                 </p>

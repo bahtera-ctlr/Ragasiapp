@@ -26,7 +26,7 @@ BEGIN
   WHERE outlet_id IN (SELECT id FROM public.outlets WHERE is_active = false);
   
   -- Step 3: Insert new outlets as active
-  INSERT INTO public.outlets (nio, name, me, cluster, kelompok, limit_rupiah, top_hari, current_saldo, is_active, updated_at)
+  INSERT INTO public.outlets (nio, name, me, cluster, kelompok, limit_rupiah, top_hari, due, current_saldo, is_active, updated_at)
   SELECT
     (item->>'nio')::TEXT,
     (item->>'name')::TEXT,
@@ -41,6 +41,11 @@ BEGIN
     CASE 
       WHEN (item->>'top_hari') IS NULL OR (item->>'top_hari') = '' OR (item->>'top_hari')::TEXT = 'null' THEN NULL
       WHEN (item->>'top_hari')::TEXT ~ '^[0-9]+$' THEN (item->>'top_hari')::INTEGER
+      ELSE NULL
+    END,
+    CASE
+      WHEN (item->>'due') IS NULL OR (item->>'due') = '' OR (item->>'due')::TEXT = 'null' THEN NULL
+      WHEN (item->>'due')::TEXT ~ '^[0-9]+$' THEN (item->>'due')::INTEGER
       ELSE NULL
     END,
     CASE 
