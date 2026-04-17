@@ -287,39 +287,87 @@ export default function FakturisDashboard() {
                 key={invoice.id}
                 type="button"
                 onClick={() => openFakturModal(invoice)}
-                className="w-full text-left bg-gray-900 border border-gray-800 rounded-lg p-5 hover:border-gray-700 transition-colors"
+                className="w-full text-left bg-gray-900 border border-gray-800 rounded-lg p-4 cursor-pointer hover:border-blue-600 transition-colors"
               >
-                <div className="flex justify-between items-start gap-4">
-                  <div>
-                    <h3 className="text-lg font-semibold">
-                      {invoice.outlet?.name || invoice.outlet_id} - {invoice.order_id?.slice(0, 8).toUpperCase() || invoice.id.slice(0, 8)}
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex-1">
+                    <h3 className="text-base font-semibold text-white">
+                      {invoice.outlet?.name || invoice.outlet_id}
                     </h3>
-                    <p className="text-gray-400 text-sm">
-                      {invoice.outlet?.NIO ? `NIO: ${invoice.outlet.NIO}` : `Outlet ID: ${invoice.outlet_id}`}
+                    <p className="text-xs text-gray-400 mt-1">
+                      {invoice.order_id?.slice(0, 8).toUpperCase() || invoice.id.slice(0, 8)} • {invoice.outlet?.NIO ? `NIO: ${invoice.outlet.NIO}` : `Outlet: ${invoice.outlet_id}`}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded-full bg-green-900 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-green-200">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-green-900 text-green-200">
                       Released
                     </span>
                     {invoice.logistik_in_status === 'terpacking' && (
-                      <span className="inline-flex items-center rounded-full bg-blue-900 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-200">
+                      <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-blue-900 text-blue-200">
                         Packed
                       </span>
                     )}
                   </div>
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-4 text-sm text-gray-400">
-                  <div>
-                    <div className="text-xs uppercase tracking-wider text-gray-500">Amount</div>
-                    <div className="text-white font-semibold">Rp {invoice.amount?.toLocaleString('id-ID') || 0}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-wider text-gray-500">Released</div>
-                    <div className="text-white">{invoice.released_at ? new Date(invoice.released_at).toLocaleDateString('id-ID') : '-'}</div>
-                  </div>
+                <div className="mb-3 pb-3 border-b border-gray-800">
+                  <p className="text-white font-bold text-lg">Rp {invoice.amount?.toLocaleString('id-ID') || 0}</p>
                 </div>
+
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <span className="px-2 py-1 rounded text-xs font-semibold whitespace-nowrap bg-gray-800 text-gray-300">
+                    Released: {invoice.released_at ? new Date(invoice.released_at).toLocaleDateString('id-ID') : '-'}
+                  </span>
+                  {invoice.logistik_in_status && (
+                    <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${
+                      invoice.logistik_in_status === 'terpacking'
+                        ? 'bg-blue-900 text-blue-200'
+                        : 'bg-gray-800 text-gray-300'
+                    }`}>
+                      {invoice.logistik_in_status === 'terpacking' ? '📦 Packed' : '⏳ Packing'}
+                    </span>
+                  )}
+                  {invoice.faktur_status && (
+                    <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${
+                      invoice.faktur_status === 'terfaktur'
+                        ? 'bg-purple-900 text-purple-200'
+                        : 'bg-gray-800 text-gray-300'
+                    }`}>
+                      {invoice.faktur_status === 'terfaktur' ? '📄 Invoiced' : '⏳ Invoicing'}
+                    </span>
+                  )}
+                  {invoice.shipment_status && (
+                    <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${
+                      invoice.shipment_status === 'ready'
+                        ? 'bg-amber-900 text-amber-200'
+                        : invoice.shipment_status === 'planned'
+                        ? 'bg-orange-900 text-orange-200'
+                        : invoice.shipment_status === 'completed'
+                        ? 'bg-green-900 text-green-200'
+                        : 'bg-gray-800 text-gray-300'
+                    }`}>
+                      {invoice.shipment_status === 'ready' ? '🚚 Ready' : invoice.shipment_status === 'planned' ? '📋 Planned' : invoice.shipment_status === 'completed' ? '✓ Shipped' : 'Pending'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1 text-xs text-gray-400 mb-3">
+                  {invoice.packing_verified_at && (
+                    <div>Waktu Terpacking: <span className="text-white">{new Date(invoice.packing_verified_at).toLocaleDateString('id-ID')} {new Date(invoice.packing_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span></div>
+                  )}
+                  {invoice.faktur_verified_at && (
+                    <div>Waktu Faktur: <span className="text-white">{new Date(invoice.faktur_verified_at).toLocaleDateString('id-ID')} {new Date(invoice.faktur_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span></div>
+                  )}
+                  {invoice.delivery_date && (
+                    <div>Waktu Terkirim: <span className="text-white">{new Date(invoice.delivery_date).toLocaleDateString('id-ID')} {new Date(invoice.delivery_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span></div>
+                  )}
+                </div>
+
+                {invoice.faktur_verified_at && (
+                  <div className="mt-2 text-xs text-gray-400">
+                    Faktur selesai: <span className="text-white">{new Date(invoice.faktur_verified_at).toLocaleDateString('id-ID')} {new Date(invoice.faktur_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                )}
 
                 {invoice.notes && (
                   <div className="mt-3 bg-gray-800 rounded p-3 text-sm text-gray-300">
@@ -377,6 +425,11 @@ export default function FakturisDashboard() {
                     {selectedInvoice.logistik_in_status === 'terpacking' ? '✓ Sudah Terpacking' : 'Menunggu Packing'}
                     {selectedInvoice.packing_officer_name ? ` — Petugas: ${selectedInvoice.packing_officer_name}` : ''}
                   </div>
+                  {selectedInvoice.packing_verified_at && (
+                    <div className="mt-2 text-sm text-blue-200">
+                      Waktu Terpacking: {new Date(selectedInvoice.packing_verified_at).toLocaleDateString('id-ID')} {new Date(selectedInvoice.packing_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -390,9 +443,20 @@ export default function FakturisDashboard() {
                      selectedInvoice.shipment_status}
                     {selectedInvoice.expedisi_officer_name ? ` — Petugas: ${selectedInvoice.expedisi_officer_name}` : ''}
                   </div>
+                  {selectedInvoice.delivery_date && (
+                    <div className="mt-2 text-sm text-amber-200">
+                      Waktu Terkirim: {new Date(selectedInvoice.delivery_date).toLocaleDateString('id-ID')} {new Date(selectedInvoice.delivery_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+
+            {selectedInvoice.faktur_verified_at && (
+              <div className="mt-3 rounded border border-purple-800 bg-purple-950 p-3 text-sm text-purple-200">
+                Waktu Faktur: {new Date(selectedInvoice.faktur_verified_at).toLocaleDateString('id-ID')} {new Date(selectedInvoice.faktur_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            )}
 
             {/* Error message */}
             {fakturError && (

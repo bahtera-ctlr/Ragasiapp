@@ -334,20 +334,20 @@ Terima kasih!
                   return (
                   <div
                     key={invoice.id}
-                    className="bg-gray-900 border border-gray-800 rounded-lg p-6"
+                    className="bg-gray-900 border border-gray-800 rounded-lg p-4 cursor-pointer hover:border-blue-600 transition-colors"
                   >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="text-lg font-semibold">
-                          {invoice.outlet?.name || invoice.outlet_id} - {formattedDate} {formattedTime}
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <h3 className="text-base font-semibold text-white">
+                          {invoice.outlet?.name || invoice.outlet_id}
                         </h3>
-                        <p className="text-gray-400 text-sm">
-                          Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()}
-                          {invoice.outlet?.NIO && ` (NIO: ${invoice.outlet.NIO})`}
+                        <p className="text-xs text-gray-400 mt-1">
+                          {formattedDate} {formattedTime} • Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()}
+                          {invoice.outlet?.NIO && ` • NIO: ${invoice.outlet.NIO}`}
                         </p>
                       </div>
                       <span
-                        className={`px-3 py-1 rounded-full text-sm font-medium ${
+                        className={`px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${
                           invoice.status === 'draft'
                             ? 'bg-purple-900 text-purple-200'
                             : 'bg-yellow-900 text-yellow-200'
@@ -357,7 +357,7 @@ Terima kasih!
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                    <div className="mb-3 pb-3 border-b border-gray-800 text-sm grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-gray-400">Amount</p>
                         <p className="text-white font-semibold">
@@ -490,6 +490,11 @@ Terima kasih!
                       <p className="text-white font-bold text-lg">
                         Rp {invoice.amount?.toLocaleString('id-ID') || 0}
                       </p>
+                      {invoice.status === 'posted' && (
+                        <p className="text-xs text-gray-400 mt-2">
+                          Posted: <span className="text-white">{new Date(invoice.created_at).toLocaleDateString('id-ID')} {new Date(invoice.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                        </p>
+                      )}
                     </div>
 
                     {/* Status Badges - Compact */}
@@ -652,7 +657,7 @@ Terima kasih!
 
             {/* Amount */}
             <div className="bg-gray-800 rounded-lg p-4 mb-6 border border-gray-700">
-              <div className="flex justify-between items-end">
+              <div className="flex flex-col gap-4 md:flex-row md:justify-between md:items-end">
                 <div>
                   <p className="text-gray-400 text-sm mb-1">Total Amount</p>
                   <p className="text-white font-bold text-2xl">
@@ -676,6 +681,11 @@ Terima kasih!
                   </span>
                 </div>
               </div>
+              {detailInvoice.status === 'posted' && (
+                <div className="mt-3 text-sm text-gray-300">
+                  Posted: <span className="text-white">{new Date(detailInvoice.created_at).toLocaleDateString('id-ID')} {new Date(detailInvoice.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+              )}
             </div>
 
             {/* Status Badges */}
@@ -734,6 +744,9 @@ Terima kasih!
                   <h4 className="text-blue-400 font-semibold mb-2">📦 Catatan Packing (Gudang)</h4>
                   <div className="space-y-1 text-blue-200 text-sm">
                     <p><span className="text-blue-300">Petugas:</span> {detailInvoice.packing_officer_name}</p>
+                    {detailInvoice.packing_verified_at && (
+                      <p><span className="text-blue-300">Waktu Terpacking:</span> {new Date(detailInvoice.packing_verified_at).toLocaleDateString('id-ID')} {new Date(detailInvoice.packing_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>
+                    )}
                     {detailInvoice.packing_notes && (
                       <p><span className="text-blue-300">Catatan:</span> {detailInvoice.packing_notes}</p>
                     )}
@@ -747,6 +760,9 @@ Terima kasih!
                   <h4 className="text-purple-400 font-semibold mb-2">📄 Catatan Fakturis</h4>
                   <div className="space-y-1 text-purple-200 text-sm">
                     <p><span className="text-purple-300">Petugas:</span> {detailInvoice.faktur_officer_name}</p>
+                    {detailInvoice.faktur_verified_at && (
+                      <p><span className="text-purple-300">Waktu Faktur:</span> {new Date(detailInvoice.faktur_verified_at).toLocaleDateString('id-ID')} {new Date(detailInvoice.faktur_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>
+                    )}
                     {detailInvoice.faktur_notes && (
                       <p><span className="text-purple-300">Catatan:</span> {detailInvoice.faktur_notes}</p>
                     )}

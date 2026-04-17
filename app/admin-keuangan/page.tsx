@@ -23,7 +23,6 @@ export default function AdminKeuanganDashboard() {
   const [tab, setTab] = useState<'outlets' | 'outlet-import' | 'invoices' | 'master-data-barang' | 'daftar-karyawan'>('outlets');
   const [isExporting, setIsExporting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [releaseSuccess, setReleaseSuccess] = useState<string | null>(null);
   
@@ -963,6 +962,18 @@ Generated: ${new Date().toLocaleString('id-ID')}
                       )}
                     </div>
 
+                    <div className="space-y-1 text-sm text-gray-400 mb-3">
+                      {invoice.packing_verified_at && (
+                        <div>Waktu Terpacking: <span className="text-white">{new Date(invoice.packing_verified_at).toLocaleDateString('id-ID')} {new Date(invoice.packing_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span></div>
+                      )}
+                      {invoice.faktur_verified_at && (
+                        <div>Waktu Faktur: <span className="text-white">{new Date(invoice.faktur_verified_at).toLocaleDateString('id-ID')} {new Date(invoice.faktur_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span></div>
+                      )}
+                      {invoice.delivery_date && (
+                        <div>Waktu Terkirim: <span className="text-white">{new Date(invoice.delivery_date).toLocaleDateString('id-ID')} {new Date(invoice.delivery_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span></div>
+                      )}
+                    </div>
+
                     {/* Action buttons - show only in pending filter */}
                     {invoiceFilter === 'pending' && (invoice.status !== 'paid' && invoice.status !== 'cancelled') && (
                       <div className="flex gap-2 pt-3 border-t border-gray-800">
@@ -1658,6 +1669,9 @@ Generated: ${new Date().toLocaleString('id-ID')}
                   <h4 className="text-blue-400 font-semibold mb-2">📦 Catatan Packing (Gudang)</h4>
                   <div className="space-y-1 text-blue-200 text-sm">
                     <p><span className="text-blue-300">Petugas:</span> {detailInvoice.packing_officer_name}</p>
+                    {detailInvoice.packing_verified_at && (
+                      <p><span className="text-blue-300">Waktu Terpacking:</span> {new Date(detailInvoice.packing_verified_at).toLocaleDateString('id-ID')} {new Date(detailInvoice.packing_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>
+                    )}
                     {detailInvoice.packing_notes && (
                       <p><span className="text-blue-300">Catatan:</span> {detailInvoice.packing_notes}</p>
                     )}
@@ -1671,6 +1685,9 @@ Generated: ${new Date().toLocaleString('id-ID')}
                   <h4 className="text-purple-400 font-semibold mb-2">📄 Catatan Fakturis</h4>
                   <div className="space-y-1 text-purple-200 text-sm">
                     <p><span className="text-purple-300">Petugas:</span> {detailInvoice.faktur_officer_name}</p>
+                    {detailInvoice.faktur_verified_at && (
+                      <p><span className="text-purple-300">Waktu Faktur:</span> {new Date(detailInvoice.faktur_verified_at).toLocaleDateString('id-ID')} {new Date(detailInvoice.faktur_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>
+                    )}
                     {detailInvoice.faktur_notes && (
                       <p><span className="text-purple-300">Catatan:</span> {detailInvoice.faktur_notes}</p>
                     )}

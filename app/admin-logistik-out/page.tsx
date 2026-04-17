@@ -299,23 +299,23 @@ export default function AdminExpedisiDashboard() {
                 {filteredReadyToShip.map((invoice) => (
                   <div
                     key={invoice.id}
-                    className="bg-gray-900 border border-gray-800 rounded-lg p-6"
+                    className="bg-gray-900 border border-gray-800 rounded-lg p-4 cursor-pointer hover:border-blue-600 transition-colors"
                   >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="text-lg font-semibold">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <h3 className="text-base font-semibold text-white">
                           {invoice.outlet?.name || invoice.outlet_id}
                         </h3>
-                        <p className="text-gray-400 text-sm">
-                          Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} | NIO: {invoice.outlet?.NIO || '-'}
+                        <p className="text-xs text-gray-400 mt-1">
+                          Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} • NIO: {invoice.outlet?.NIO || '-'}
                         </p>
                       </div>
-                      <span className="px-3 py-1 rounded-full text-sm font-medium bg-green-900 text-green-200">
+                      <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-green-900 text-green-200">
                         ✓ Siap Kirim
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-4 mb-4 text-sm">
+                    <div className="mb-3 pb-3 border-b border-gray-800 text-sm">
                       <div>
                         <p className="text-gray-400">Amount</p>
                         <p className="text-white font-semibold">
@@ -378,23 +378,23 @@ export default function AdminExpedisiDashboard() {
                 {filteredPlannedShipments.map((invoice) => (
                   <div
                     key={invoice.id}
-                    className="bg-gray-900 border border-gray-800 rounded-lg p-6"
+                    className="bg-gray-900 border border-gray-800 rounded-lg p-4 cursor-pointer hover:border-blue-600 transition-colors"
                   >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="text-lg font-semibold">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <h3 className="text-base font-semibold text-white">
                           {invoice.outlet?.name || invoice.outlet_id}
                         </h3>
-                        <p className="text-gray-400 text-sm">
-                          Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} | Rencana: {new Date(invoice.shipment_date).toLocaleDateString('id-ID')}
+                        <p className="text-xs text-gray-400 mt-1">
+                          Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} • Rencana: {new Date(invoice.shipment_date).toLocaleDateString('id-ID')}
                         </p>
                       </div>
-                      <span className="px-3 py-1 rounded-full text-sm font-medium bg-yellow-900 text-yellow-200">
+                      <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-yellow-900 text-yellow-200">
                         🚚 Direncanakan
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
+                    <div className="mb-3 pb-3 border-b border-gray-800 text-sm">
                       <div>
                         <p className="text-gray-400">Amount</p>
                         <p className="text-white font-semibold">
@@ -467,19 +467,19 @@ export default function AdminExpedisiDashboard() {
                 {filteredCompletedShipments.map((invoice) => (
                   <div
                     key={invoice.id}
-                    className="bg-gray-900 border border-gray-800 rounded-lg p-6"
+                    className="bg-gray-900 border border-gray-800 rounded-lg p-4 cursor-pointer hover:border-blue-600 transition-colors"
                   >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="text-lg font-semibold">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <h3 className="text-base font-semibold text-white">
                           {invoice.outlet?.name || invoice.outlet_id}
                         </h3>
-                        <p className="text-gray-400 text-sm">
-                          Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} | Status: {invoice.delivery_status}
+                        <p className="text-xs text-gray-400 mt-1">
+                          Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} • Status: {invoice.delivery_status}
                         </p>
                       </div>
                       <span
-                        className={`px-3 py-1 rounded-full text-sm font-medium ${
+                        className={`px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${
                           invoice.delivery_status === 'terkirim'
                             ? 'bg-green-900 text-green-200'
                             : 'bg-red-900 text-red-200'
@@ -489,7 +489,7 @@ export default function AdminExpedisiDashboard() {
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-4 mb-4 text-sm">
+                    <div className="mb-3 pb-3 border-b border-gray-800 text-sm">
                       <div>
                         <p className="text-gray-400">Amount</p>
                         <p className="text-white font-semibold">
@@ -503,9 +503,25 @@ export default function AdminExpedisiDashboard() {
                       <div>
                         <p className="text-gray-400">Tanggal Pengiriman</p>
                         <p className="text-white font-semibold">
-                          {invoice.delivery_date ? new Date(invoice.delivery_date).toLocaleDateString('id-ID') : '-'}
+                          {invoice.delivery_date ? `${new Date(invoice.delivery_date).toLocaleDateString('id-ID')} ${new Date(invoice.delivery_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : '-'}
                         </p>
                       </div>
+                      {invoice.packing_verified_at && (
+                        <div>
+                          <p className="text-gray-400">Waktu Terpacking</p>
+                          <p className="text-white font-semibold">
+                            {new Date(invoice.packing_verified_at).toLocaleDateString('id-ID')} {new Date(invoice.packing_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      )}
+                      {invoice.faktur_verified_at && (
+                        <div>
+                          <p className="text-gray-400">Waktu Faktur</p>
+                          <p className="text-white font-semibold">
+                            {new Date(invoice.faktur_verified_at).toLocaleDateString('id-ID')} {new Date(invoice.faktur_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      )}
                       <div>
                         <p className="text-gray-400">Status</p>
                         <p className={`font-semibold ${

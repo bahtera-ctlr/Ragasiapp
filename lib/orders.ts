@@ -774,7 +774,8 @@ export async function updateInvoicePackingStatus(
   packingNotes: string,
   verifiedBy: string,
   expedisiOfficerName?: string,
-  shipmentStatus?: string
+  shipmentStatus?: string,
+  preservePackingVerifiedAt = false
 ) {
   try {
     const updateData: any = {
@@ -782,9 +783,12 @@ export async function updateInvoicePackingStatus(
       packing_officer_name: packingOfficerName,
       packing_notes: packingNotes,
       packing_verified_by: verifiedBy,
-      packing_verified_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
+
+    if (!preservePackingVerifiedAt) {
+      updateData.packing_verified_at = new Date().toISOString();
+    }
 
     // If expedisi officer is provided, set shipment status and officer
     if (expedisiOfficerName) {

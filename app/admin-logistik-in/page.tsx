@@ -18,9 +18,11 @@ interface Invoice {
   logistik_in_status: string;
   packing_officer_name?: string;
   packing_notes?: string;
+  packing_verified_at?: string;
   faktur_status?: string;
   faktur_officer_name?: string;
   faktur_notes?: string;
+  faktur_verified_at?: string;
   shipment_status?: string;
   expedisi_officer_name?: string;
   shipment_plan?: string;
@@ -224,11 +226,15 @@ export default function AdminLogisticInPage() {
 
     try {
       setSaving(true);
+      const preservePackingTime = selectedInvoice.logistik_in_status === 'terpacking' && !!selectedInvoice.packing_verified_at;
       const { data, error } = await updateInvoicePackingStatus(
         selectedInvoice.id,
         packingOfficerName,
         packingNotes,
-        user?.id || ''
+        user?.id || '',
+        undefined,
+        undefined,
+        preservePackingTime
       );
 
       if (error) {
@@ -466,27 +472,27 @@ export default function AdminLogisticInPage() {
                 {packingOrderInvoices.map(invoice => (
               <div
                 key={invoice.id}
-                className="bg-gray-900 rounded-lg p-4 border border-gray-700 hover:border-gray-600 transition"
+                className="bg-gray-900 border border-gray-800 rounded-lg p-4 cursor-pointer hover:border-blue-600 transition-colors"
               >
-                <div className="flex justify-between items-start mb-3 gap-3">
+                <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold">
+                    <h3 className="text-base font-semibold text-white">
                       {getInvoiceHeaderTitle(invoice)}
                     </h3>
-                    <p className="text-sm text-gray-400">
-                      Order ID: {formatOrderId(invoice.order_id)} (NIO: {invoice.outlet?.nio || 'N/A'})
+                    <p className="text-xs text-gray-400 mt-1">
+                      Order ID: {formatOrderId(invoice.order_id)} • NIO: {invoice.outlet?.nio || 'N/A'}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-blue-600 text-white">
                       Released
                     </span>
                     {invoice.logistik_in_status === 'terpacking' ? (
-                      <span className="inline-block bg-green-800 text-green-200 px-3 py-1 rounded text-sm font-semibold">
+                      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-800 text-green-200">
                         ✓ Terpacking
                       </span>
                     ) : (
-                      <span className="inline-block bg-yellow-800 text-yellow-200 px-3 py-1 rounded text-sm font-semibold">
+                      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-800 text-yellow-200">
                         Menunggu
                       </span>
                     )}
@@ -494,17 +500,40 @@ export default function AdminLogisticInPage() {
                 </div>
 
                 {/* Invoice Details */}
-                <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
-                  <div>
-                    <span className="text-gray-400">Amount: </span>
-                    <span className="font-semibold">
-                      Rp {Number(invoice.amount).toLocaleString('id-ID')}
-                    </span>
+                <div className="mb-3 pb-3 border-b border-gray-800 text-sm">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="text-gray-400">Amount: </span>
+                      <span className="font-semibold">
+                        Rp {Number(invoice.amount).toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Released: </span>
+                      <span className="font-semibold">{formatDate(invoice.released_at)}</span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-gray-400">Released: </span>
-                    <span className="font-semibold">{formatDate(invoice.released_at)}</span>
-                  </div>
+                </div>
+
+                <div className="mb-3 text-sm text-gray-400 space-y-1">
+                  {invoice.packing_verified_at && (
+                    <div>
+                      <span className="text-gray-400">Waktu Terpacking: </span>
+                      <span className="font-semibold text-white">{formatDate(invoice.packing_verified_at)}</span>
+                    </div>
+                  )}
+                  {invoice.faktur_verified_at && (
+                    <div>
+                      <span className="text-purple-400">Waktu Faktur: </span>
+                      <span className="font-semibold text-white">{formatDate(invoice.faktur_verified_at)}</span>
+                    </div>
+                  )}
+                  {invoice.delivery_date && (
+                    <div>
+                      <span className="text-amber-400">Waktu Terkirim: </span>
+                      <span className="font-semibold text-white">{new Date(invoice.delivery_date).toLocaleDateString('id-ID')} {new Date(invoice.delivery_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Packing Info */}
@@ -680,41 +709,61 @@ export default function AdminLogisticInPage() {
                 {dropshipmentInvoices.map(invoice => (
                   <div
                     key={invoice.id}
-                    className="bg-gray-900 rounded-lg p-4 border border-gray-700 hover:border-gray-600 transition"
+                    className="bg-gray-900 border border-gray-800 rounded-lg p-4 cursor-pointer hover:border-blue-600 transition-colors"
                   >
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1">
-                          <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <h3 className="text-lg font-semibold">
-                            {getInvoiceHeaderTitle(invoice)}
-                          </h3>
-                          <p className="text-sm text-gray-400">
-                            Order ID: {formatOrderId(invoice.order_id)} (NIO: {invoice.outlet?.nio || 'N/A'})
-                          </p>
-                        </div>
-                        <span className="inline-flex items-center rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
+                        <h3 className="text-base font-semibold text-white">
+                          {getInvoiceHeaderTitle(invoice)}
+                        </h3>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Order ID: {formatOrderId(invoice.order_id)} • NIO: {invoice.outlet?.nio || 'N/A'}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-blue-600 text-white">
                           Released
                         </span>
+                        <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-800 text-green-200">
+                          ✓ Terpacking
+                        </span>
                       </div>
-                      </div>
-                      <span className="inline-block bg-green-800 text-green-200 px-3 py-1 rounded text-sm font-semibold">
-                        ✓ Terpacking
-                      </span>
                     </div>
 
                     {/* Invoice Details */}
-                    <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
-                      <div>
-                        <span className="text-gray-400">Amount: </span>
-                        <span className="font-semibold">
-                          Rp {Number(invoice.amount).toLocaleString('id-ID')}
-                        </span>
+                    <div className="mb-3 pb-3 border-b border-gray-800 text-sm">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-gray-400">Amount: </span>
+                          <span className="font-semibold">
+                            Rp {Number(invoice.amount).toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Released: </span>
+                          <span className="font-semibold">{formatDate(invoice.released_at)}</span>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-gray-400">Released: </span>
-                        <span className="font-semibold">{formatDate(invoice.released_at)}</span>
-                      </div>
+                    </div>
+                    <div className="mb-3 text-sm text-gray-400 space-y-1">
+                      {invoice.packing_verified_at && (
+                        <div>
+                          <span className="text-gray-400">Waktu Terpacking: </span>
+                          <span className="font-semibold text-white">{formatDate(invoice.packing_verified_at)}</span>
+                        </div>
+                      )}
+                      {invoice.faktur_verified_at && (
+                        <div>
+                          <span className="text-purple-400">Waktu Faktur: </span>
+                          <span className="font-semibold text-white">{formatDate(invoice.faktur_verified_at)}</span>
+                        </div>
+                      )}
+                      {invoice.delivery_date && (
+                        <div>
+                          <span className="text-amber-400">Waktu Terkirim: </span>
+                          <span className="font-semibold text-white">{new Date(invoice.delivery_date).toLocaleDateString('id-ID')} {new Date(invoice.delivery_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Packing Info */}
@@ -723,6 +772,12 @@ export default function AdminLogisticInPage() {
                         <span className="text-gray-400">Petugas Packing: </span>
                         <span className="font-semibold">{invoice.packing_officer_name}</span>
                       </div>
+                      {invoice.packing_verified_at && (
+                        <div>
+                          <span className="text-gray-400">Waktu Terpacking: </span>
+                          <span className="font-semibold">{formatDate(invoice.packing_verified_at)}</span>
+                        </div>
+                      )}
                       {invoice.packing_notes && (
                         <div>
                           <span className="text-gray-400">Catatan: </span>
@@ -730,7 +785,6 @@ export default function AdminLogisticInPage() {
                         </div>
                       )}
                     </div>
-
                     {/* Action Buttons */}
                     <div className="flex flex-col md:flex-row gap-2">
                       <button
@@ -770,6 +824,13 @@ export default function AdminLogisticInPage() {
                   {getInvoiceHeaderTitle(selectedInvoice)}
                 </div>
               </div>
+
+              {selectedInvoice.logistik_in_status === 'terpacking' && selectedInvoice.packing_verified_at && (
+                <div className="bg-gray-800 rounded p-3 text-sm">
+                  <span className="text-gray-400">Waktu Terpacking: </span>
+                  <span className="font-semibold">{formatDate(selectedInvoice.packing_verified_at)}</span>
+                </div>
+              )}
 
               <div className="relative">
                 <label className="block text-sm font-semibold mb-2">
@@ -869,11 +930,26 @@ export default function AdminLogisticInPage() {
 
               <div>
                 <label className="block text-sm font-semibold mb-2">Status Packing</label>
-                <div className="bg-green-900/30 border border-green-700 rounded px-3 py-2 text-sm">
-                  <span className="text-green-400">✓ Terpacking</span>
-                  <div className="text-xs text-green-300 mt-1">
+                <div className="bg-green-900/30 border border-green-700 rounded px-3 py-2 text-sm space-y-2">
+                  <div className="text-green-400">✓ Terpacking</div>
+                  <div className="text-xs text-green-300">
                     Petugas: {selectedDropshipmentInvoice.packing_officer_name}
                   </div>
+                  {selectedDropshipmentInvoice.packing_verified_at && (
+                    <div className="text-xs text-green-200">
+                      Waktu Terpacking: {formatDate(selectedDropshipmentInvoice.packing_verified_at)}
+                    </div>
+                  )}
+                  {selectedDropshipmentInvoice.faktur_verified_at && (
+                    <div className="text-xs text-purple-200">
+                      Waktu Faktur: {formatDate(selectedDropshipmentInvoice.faktur_verified_at)}
+                    </div>
+                  )}
+                  {selectedDropshipmentInvoice.delivery_date && (
+                    <div className="text-xs text-amber-200">
+                      Waktu Terkirim: {new Date(selectedDropshipmentInvoice.delivery_date).toLocaleDateString('id-ID')} {new Date(selectedDropshipmentInvoice.delivery_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  )}
                 </div>
               </div>
 
