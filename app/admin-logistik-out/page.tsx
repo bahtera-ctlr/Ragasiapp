@@ -6,6 +6,7 @@ import { logOut } from '@/lib/auth';
 import { getReadyToShipInvoices, getPlannedShipments, getCompletedShipments, planShipment, updateShipmentDelivery } from '@/lib/orders';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
+import ShippingBadge from '@/app/components/ShippingBadge';
 
 export default function AdminExpedisiDashboard() {
   const router = useRouter();
@@ -313,6 +314,11 @@ export default function AdminExpedisiDashboard() {
                       <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-green-900 text-green-200">
                         ✓ Siap Kirim
                       </span>
+                      {invoice.shipping_request && (
+                        <div className="ml-2">
+                          <ShippingBadge shippingRequest={invoice.shipping_request} size="sm" />
+                        </div>
+                      )}
                     </div>
 
                     <div className="mb-3 pb-3 border-b border-gray-800 text-sm">
@@ -392,6 +398,11 @@ export default function AdminExpedisiDashboard() {
                       <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-yellow-900 text-yellow-200">
                         🚚 Direncanakan
                       </span>
+                      {invoice.shipping_request && (
+                        <div className="ml-2">
+                          <ShippingBadge shippingRequest={invoice.shipping_request} size="sm" />
+                        </div>
+                      )}
                     </div>
 
                     <div className="mb-3 pb-3 border-b border-gray-800 text-sm">

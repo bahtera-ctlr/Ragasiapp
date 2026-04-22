@@ -245,7 +245,7 @@ export async function getInvoices(filters?: {
     const orderIds = [...new Set(invoicesData.map(inv => inv.order_id))];
     const { data: ordersData, error: ordersError } = await supabase
       .from('orders')
-      .select('id, items')
+      .select('id, items, shipping_request')
       .in('id', orderIds);
 
     if (ordersError) {
@@ -258,12 +258,14 @@ export async function getInvoices(filters?: {
 
     // Create order items map
     const orderItemsMap = new Map((ordersData || []).map(o => [o.id, o.items]));
+    const shippingRequestMap = new Map((ordersData || []).map(o => [o.id, o.shipping_request]));
 
     // Merge outlet data and order items
     const enhancedData = invoicesData.map(invoice => ({
       ...invoice,
       outlet: outletMap.get(invoice.outlet_id) || null,
-      items: orderItemsMap.get(invoice.order_id) || []
+      items: orderItemsMap.get(invoice.order_id) || [],
+      shipping_request: shippingRequestMap.get(invoice.order_id) || null
     }));
 
     console.log(`Fetched ${enhancedData.length} invoices with outlet data and items`);
@@ -304,10 +306,10 @@ export async function getPendingInvoicesByMarketing(marketingId: string) {
       return { data: [], error: null };
     }
 
-    // Fetch orders to filter by marketing_id AND get order created_at and items
+    // Fetch orders to filter by marketing_id AND get order created_at, items and shipping_request
     const { data: ordersData, error: ordersError } = await supabase
       .from('orders')
-      .select('id, created_at, items')
+      .select('id, created_at, items, shipping_request')
       .eq('marketing_id', marketingId)
       .in('id', orderIds);
 
@@ -340,7 +342,8 @@ export async function getPendingInvoicesByMarketing(marketingId: string) {
         ...invoice,
         outlet: outletMap.get(invoice.outlet_id) || null,
         order_created_at: orderMap.get(invoice.order_id)?.created_at || invoice.created_at,
-        items: orderMap.get(invoice.order_id)?.items || []
+        items: orderMap.get(invoice.order_id)?.items || [],
+        shipping_request: orderMap.get(invoice.order_id)?.shipping_request || null
       }));
 
       return { data: enhancedData, error: null };
@@ -379,10 +382,10 @@ export async function getInvoicesByMarketing(marketingId: string) {
       return { data: [], error: null };
     }
 
-    // Fetch orders to filter by marketing_id AND get order created_at and items
+    // Fetch orders to filter by marketing_id AND get order created_at, items and shipping_request
     const { data: ordersData, error: ordersError } = await supabase
       .from('orders')
-      .select('id, created_at, items')
+      .select('id, created_at, items, shipping_request')
       .eq('marketing_id', marketingId)
       .in('id', orderIds);
 
@@ -418,7 +421,8 @@ export async function getInvoicesByMarketing(marketingId: string) {
         ...invoice,
         outlet: outletMap.get(invoice.outlet_id) || null,
         order_created_at: orderMap.get(invoice.order_id)?.created_at || invoice.created_at,
-        items: orderMap.get(invoice.order_id)?.items || []
+        items: orderMap.get(invoice.order_id)?.items || [],
+        shipping_request: orderMap.get(invoice.order_id)?.shipping_request || null
       }));
 
       return { data: enhancedData, error: null };
@@ -659,7 +663,7 @@ export async function getReleasedInvoices() {
     const orderIds = [...new Set(invoicesData.map(inv => inv.order_id))].filter(Boolean);
     const { data: ordersData, error: ordersError } = await supabase
       .from('orders')
-      .select('id, items, outlet_id')
+      .select('id, items, outlet_id, shipping_request')
       .in('id', orderIds);
 
     if (ordersError) {
@@ -704,6 +708,7 @@ export async function getReleasedInvoices() {
     // Merge outlet data with fallback: invoice outlet_id -> id or nio, then order outlet_id -> id or nio
     const orderItemsMap = new Map((ordersData || []).map(order => [order.id, order.items]));
     const orderOutletMap = new Map((ordersData || []).map(order => [order.id, order.outlet_id]));
+    const shippingRequestMap = new Map((ordersData || []).map(order => [order.id, order.shipping_request]));
 
     const enhancedData = invoicesData.map(invoice => {
       const invoiceOutletId = invoice.outlet_id;
@@ -716,7 +721,8 @@ export async function getReleasedInvoices() {
       return {
         ...invoice,
         outlet,
-        items: orderItemsMap.get(invoice.order_id) || []
+        items: orderItemsMap.get(invoice.order_id) || [],
+        shipping_request: shippingRequestMap.get(invoice.order_id) || null
       };
     });
 
@@ -936,6 +942,13 @@ export async function getReadyToShipInvoices() {
       return { data: [], error: null };
     }
 
+    // Fetch order data to get shipping_request
+    const orderIds = [...new Set(invoicesData.map(inv => inv.order_id))].filter(Boolean);
+    const { data: ordersData } = await supabase
+      .from('orders')
+      .select('id, shipping_request')
+      .in('id', orderIds);
+
     // Fetch outlet data
     const outletIds = [...new Set(invoicesData.map(inv => inv.outlet_id))];
     const { data: outletsData } = await supabase
@@ -944,9 +957,11 @@ export async function getReadyToShipInvoices() {
       .in('id', outletIds);
 
     const outletMap = new Map((outletsData || []).map(o => [o.id, o]));
+    const shippingRequestMap = new Map((ordersData || []).map(o => [o.id, o.shipping_request]));
     const enhancedData = invoicesData.map(invoice => ({
       ...invoice,
-      outlet: outletMap.get(invoice.outlet_id) || null
+      outlet: outletMap.get(invoice.outlet_id) || null,
+      shipping_request: shippingRequestMap.get(invoice.order_id) || null
     }));
 
     return { data: enhancedData, error: null };
@@ -975,6 +990,13 @@ export async function getPlannedShipments() {
       return { data: [], error: null };
     }
 
+    // Fetch order data to get shipping_request
+    const orderIds = [...new Set(invoicesData.map(inv => inv.order_id))].filter(Boolean);
+    const { data: ordersData } = await supabase
+      .from('orders')
+      .select('id, shipping_request')
+      .in('id', orderIds);
+
     // Fetch outlet data
     const outletIds = [...new Set(invoicesData.map(inv => inv.outlet_id))];
     const { data: outletsData } = await supabase
@@ -983,9 +1005,11 @@ export async function getPlannedShipments() {
       .in('id', outletIds);
 
     const outletMap = new Map((outletsData || []).map(o => [o.id, o]));
+    const shippingRequestMap = new Map((ordersData || []).map(o => [o.id, o.shipping_request]));
     const enhancedData = invoicesData.map(invoice => ({
       ...invoice,
-      outlet: outletMap.get(invoice.outlet_id) || null
+      outlet: outletMap.get(invoice.outlet_id) || null,
+      shipping_request: shippingRequestMap.get(invoice.order_id) || null
     }));
 
     return { data: enhancedData, error: null };
@@ -1014,6 +1038,13 @@ export async function getCompletedShipments() {
       return { data: [], error: null };
     }
 
+    // Fetch order data to get shipping_request
+    const orderIds = [...new Set(invoicesData.map(inv => inv.order_id))].filter(Boolean);
+    const { data: ordersData } = await supabase
+      .from('orders')
+      .select('id, shipping_request')
+      .in('id', orderIds);
+
     // Fetch outlet data
     const outletIds = [...new Set(invoicesData.map(inv => inv.outlet_id))];
     const { data: outletsData } = await supabase
@@ -1022,9 +1053,11 @@ export async function getCompletedShipments() {
       .in('id', outletIds);
 
     const outletMap = new Map((outletsData || []).map(o => [o.id, o]));
+    const shippingRequestMap = new Map((ordersData || []).map(o => [o.id, o.shipping_request]));
     const enhancedData = invoicesData.map(invoice => ({
       ...invoice,
-      outlet: outletMap.get(invoice.outlet_id) || null
+      outlet: outletMap.get(invoice.outlet_id) || null,
+      shipping_request: shippingRequestMap.get(invoice.order_id) || null
     }));
 
     return { data: enhancedData, error: null };

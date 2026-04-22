@@ -7,6 +7,7 @@ import { logOut, getCurrentUser } from '@/lib/auth';
 import { getOrders, createInvoice, getInvoicesByMarketing, updateInvoice, getPendingInvoicesByMarketing } from '@/lib/orders';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
+import ShippingBadge from '@/app/components/ShippingBadge';
 
 export default function MarketingDashboard() {
   const router = useRouter();
@@ -521,6 +522,9 @@ Terima kasih!
                         </span>
                       )}
                       
+                      {/* Shipping Request Badge */}
+                      <ShippingBadge shippingRequest={invoice.shipping_request} size="sm" />
+
                       {/* Shipment Status Badge */}
                       {invoice.shipment_status && (
                         <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${

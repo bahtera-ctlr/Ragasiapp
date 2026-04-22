@@ -9,6 +9,7 @@ import { getEmployees, Employee } from '@/lib/employees';
 import { supabase } from '@/lib/supabase';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
+import ShippingBadge from '@/app/components/ShippingBadge';
 
 export default function FakturisDashboard() {
   const router = useRouter();
@@ -335,6 +336,9 @@ export default function FakturisDashboard() {
                     }`}>
                       {invoice.faktur_status === 'terfaktur' ? '📄 Invoiced' : '⏳ Invoicing'}
                     </span>
+                  )}
+                  {invoice.shipping_request && (
+                    <ShippingBadge shippingRequest={invoice.shipping_request} size="sm" />
                   )}
                   {invoice.shipment_status && (
                     <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${

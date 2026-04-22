@@ -43,6 +43,7 @@ export default function SalesPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedOutlet, setSelectedOutlet] = useState<Outlet | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [shippingRequest, setShippingRequest] = useState<'OTS' | 'REGULER' | 'EXPRESS'>('REGULER');
   const [qty, setQty] = useState(1);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [outletSearch, setOutletSearch] = useState("");
@@ -592,6 +593,7 @@ function handleAddItem() {
     p_outlet_id: selectedOutlet.id,
     p_total: total,
     p_items: itemsPayload,
+    p_shipping_request: shippingRequest,
   });
 
   if (error) {
@@ -635,6 +637,7 @@ function handleAddItem() {
     setSelectedOutlet(null);
     setProductSearch("");
     setSelectedProduct(null);
+    setShippingRequest('REGULER');
     setQty(1);
   }, 100);
 
@@ -948,6 +951,20 @@ console.log("FILTERED:", filteredProducts.length);
             )}
           </div>
         )}
+
+        {/* SHIPPING REQUEST SELECT */}
+        <div>
+          <label className="block mb-2 font-semibold">Request Pengiriman</label>
+          <select
+            value={shippingRequest}
+            onChange={(e) => setShippingRequest(e.target.value as 'OTS' | 'REGULER' | 'EXPRESS')}
+            className="w-full border rounded-lg p-3 bg-white"
+          >
+            <option value="OTS">OTS</option>
+            <option value="REGULER">REGULER</option>
+            <option value="EXPRESS">EXPRESS</option>
+          </select>
+        </div>
 
         {/* PRODUCT SELECT */}
 <div className="grid grid-cols-3 gap-4 items-end">

@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/hooks';
 import { getReleasedInvoices, updateInvoicePackingStatus } from '@/lib/orders';
 import { getEmployees, Employee } from '@/lib/employees';
 import { PageHeader } from '@/app/components/UIComponents';
+import ShippingBadge from '@/app/components/ShippingBadge';
 import { jsPDF } from 'jspdf';
 
 interface Invoice {
@@ -38,6 +39,7 @@ interface Invoice {
     nio?: string;
     me?: string;
   };
+  shipping_request?: string;
 }
 
 export default function AdminLogisticInPage() {
@@ -589,6 +591,13 @@ export default function AdminLogisticInPage() {
                         )}
                       </>
                     )}
+                  </div>
+                )}
+
+                {/* Shipping Request Badge */}
+                {invoice.shipping_request && (
+                  <div className="mb-3">
+                    <ShippingBadge shippingRequest={invoice.shipping_request} size="sm" />
                   </div>
                 )}
 

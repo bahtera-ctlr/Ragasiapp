@@ -11,6 +11,7 @@ import { getInvoices, releaseInvoice, rejectInvoice } from '@/lib/orders';
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee, Employee } from '@/lib/employees';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
+import ShippingBadge from '@/app/components/ShippingBadge';
 
 export default function AdminKeuanganDashboard() {
   const router = useRouter();
@@ -940,6 +941,11 @@ Generated: ${new Date().toLocaleString('id-ID')}
                         </span>
                       )}
                       
+                      {/* Shipping Request Badge */}
+                      {invoice.shipping_request && (
+                        <ShippingBadge shippingRequest={invoice.shipping_request} size="sm" />
+                      )}
+
                       {/* Shipment Status Badge */}
                       {invoice.shipment_status && (
                         <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${

@@ -4,12 +4,14 @@
 -- Drop semua versions function yang sudah ada
 DROP FUNCTION IF EXISTS create_sales_order() CASCADE;
 DROP FUNCTION IF EXISTS create_sales_order(TEXT, NUMERIC, JSONB) CASCADE;
+DROP FUNCTION IF EXISTS create_sales_order_v2(TEXT, NUMERIC, JSONB) CASCADE;
 
 -- Create function yang baru dengan nama yang unik
 CREATE FUNCTION create_sales_order_v2(
   p_outlet_id TEXT,
   p_total NUMERIC,
-  p_items JSONB
+  p_items JSONB,
+  p_shipping_request TEXT DEFAULT 'REGULER'
 )
 RETURNS TABLE(order_id UUID, invoice_id UUID, success BOOLEAN) AS $$
 DECLARE
@@ -26,6 +28,11 @@ BEGIN
   
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'User not authenticated';
+  END IF;
+
+  -- Validate shipping request
+  IF p_shipping_request NOT IN ('OTS', 'REGULER', 'EXPRESS') THEN
+    RAISE EXCEPTION 'Invalid shipping request: must be OTS, REGULER, or EXPRESS';
   END IF;
 
   -- Check stock availability for all items with product_id
@@ -48,8 +55,8 @@ BEGIN
   END LOOP;
 
   -- Create order
-  INSERT INTO orders (outlet_id, marketing_id, items, total_amount, total_discount, status)
-  VALUES (p_outlet_id, v_user_id, p_items, p_total, 0, 'pending')
+  INSERT INTO orders (outlet_id, marketing_id, items, total_amount, total_discount, status, shipping_request)
+  VALUES (p_outlet_id, v_user_id, p_items, p_total, 0, 'pending', p_shipping_request)
   RETURNING id INTO v_order_id;
 
   -- Create invoice
