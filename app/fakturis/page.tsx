@@ -43,6 +43,7 @@ export default function FakturisDashboard() {
 
   const [invoices, setInvoices] = useState<FakturInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [fakturTab, setFakturTab] = useState<'belum' | 'sudah'>('belum');
 
   // Modal state for faktur
   const [showFakturModal, setShowFakturModal] = useState(false);
@@ -196,7 +197,12 @@ export default function FakturisDashboard() {
 
   if (loading || !hasAccess) return <LoadingSpinner />;
 
-  const totalAmount = invoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
+  // Filter invoices berdasarkan faktur status
+  const belumDifakturkan = invoices.filter(inv => inv.faktur_status !== 'terfaktur');
+  const sudahDifakturkan = invoices.filter(inv => inv.faktur_status === 'terfaktur');
+  
+  const displayedInvoices = fakturTab === 'belum' ? belumDifakturkan : sudahDifakturkan;
+  const totalAmount = displayedInvoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -218,22 +224,46 @@ export default function FakturisDashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-6 py-8">
+        {/* Tab Navigation */}
+        <div className="flex gap-2 mb-6 border-b border-gray-800">
+          <button
+            onClick={() => setFakturTab('belum')}
+            className={`px-4 py-3 font-semibold text-sm transition-colors ${
+              fakturTab === 'belum'
+                ? 'text-blue-400 border-b-2 border-blue-400'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            Belum Difakturkan ({belumDifakturkan.length})
+          </button>
+          <button
+            onClick={() => setFakturTab('sudah')}
+            className={`px-4 py-3 font-semibold text-sm transition-colors ${
+              fakturTab === 'sudah'
+                ? 'text-purple-400 border-b-2 border-purple-400'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            Sudah Difakturkan ({sudahDifakturkan.length})
+          </button>
+        </div>
+
         <PageHeader
-          title="Daftar Invoice"
-          subtitle={`Total: ${invoices.length} invoice | Total Amount: Rp ${totalAmount.toLocaleString('id-ID')}`}
+          title={fakturTab === 'belum' ? 'Belum Difakturkan' : 'Sudah Difakturkan'}
+          subtitle={`Total: ${displayedInvoices.length} invoice | Total Amount: Rp ${totalAmount.toLocaleString('id-ID')}`}
         />
 
         {/* Invoice List */}
         {isLoading ? (
           <div className="text-center py-8 text-gray-400">Loading...</div>
-        ) : invoices.length === 0 ? (
+        ) : displayedInvoices.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
             <p className="text-lg">Tidak ada invoice</p>
-            <p className="text-sm">Invoice akan muncul setelah marketing membuat dan post sales order</p>
+            <p className="text-sm">{fakturTab === 'belum' ? 'Semua invoice sudah difakturkan' : 'Belum ada invoice yang difakturkan'}</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {invoices.map((invoice) => (
+            {displayedInvoices.map((invoice) => (
               <button
                 key={invoice.id}
                 type="button"
