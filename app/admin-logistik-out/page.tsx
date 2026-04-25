@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getReadyToShipInvoices, getPlannedShipments, getCompletedShipments, planShipment, updateShipmentDelivery } from '@/lib/orders';
@@ -8,15 +8,30 @@ import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
 
+type LogisticsInvoice = {
+  id: string;
+  outlet_id?: string;
+  order_id?: string;
+  outlet?: { name?: string; NIO?: string };
+  packing_officer_name?: string;
+  expedisi_officer_name?: string;
+  amount?: number;
+  logistik_in_status?: string;
+  shipment_status?: string;
+  status?: string;
+  shipping_request?: unknown;
+  [key: string]: unknown;
+};
+
 export default function AdminExpedisiDashboard() {
   const router = useRouter();
-  const { user, userProfile, loading } = useAuth();
+  const { user, loading } = useAuth();
   const { hasAccess } = useRoleCheck(['admin_ekspedisi', 'super_admin']);
 
   const [tab, setTab] = useState<'ready' | 'planned' | 'completed'>('ready');
-  const [readyToShip, setReadyToShip] = useState<any[]>([]);
-  const [plannedShipments, setPlannedShipments] = useState<any[]>([]);
-  const [completedShipments, setCompletedShipments] = useState<any[]>([]);
+  const [readyToShip, setReadyToShip] = useState<LogisticsInvoice[]>([]);
+  const [plannedShipments, setPlannedShipments] = useState<LogisticsInvoice[]>([]);
+  const [completedShipments, setCompletedShipments] = useState<LogisticsInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Search states
@@ -26,7 +41,7 @@ export default function AdminExpedisiDashboard() {
 
   // Modal states
   const [showPlanModal, setShowPlanModal] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<LogisticsInvoice | null>(null);
   const [expedisiOfficerName, setExpedisiOfficerName] = useState('');
   const [shipmentPlan, setShipmentPlan] = useState('');
   const [planError, setPlanError] = useState('');
@@ -38,35 +53,7 @@ export default function AdminExpedisiDashboard() {
   const [deliveryError, setDeliveryError] = useState('');
   const [savingDelivery, setSavingDelivery] = useState(false);
 
-  useEffect(() => {
-    if (loading || !hasAccess) return;
-    fetchData();
-  }, [loading, hasAccess, tab]);
-
-  // Show page UI immediately, only show "Access Denied" if user is authenticated and doesn't have access
-  if (!user && loading) {
-    return <LoadingSpinner />;
-  }
-
-  // Redirect jika tidak punya akses
-  if (!loading && user && !hasAccess) {
-    return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold mb-4 text-red-500">Access Denied</h1>
-          <p className="text-gray-400 mb-8">Anda tidak memiliki akses ke halaman ini</p>
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded text-white transition"
-          >
-            Kembali ke Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       if (tab === 'ready') {
@@ -94,9 +81,37 @@ export default function AdminExpedisiDashboard() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [tab]);
 
-  const openPlanModal = (invoice: any) => {
+  useEffect(() => {
+    if (loading || !hasAccess) return;
+    fetchData();
+  }, [loading, hasAccess, fetchData]);
+
+  // Show page UI immediately, only show "Access Denied" if user is authenticated and doesn't have access
+  if (!user && loading) {
+    return <LoadingSpinner />;
+  }
+
+  // Redirect jika tidak punya akses
+  if (!loading && user && !hasAccess) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
+        <div className="text-center">
+          <h1 className="text-4xl font-bold mb-4 text-red-500">Access Denied</h1>
+          <p className="text-gray-400 mb-8">Anda tidak memiliki akses ke halaman ini</p>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded text-white transition"
+          >
+            Kembali ke Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const openPlanModal = (invoice: LogisticsInvoice) => {
     setSelectedInvoice(invoice);
     setExpedisiOfficerName('');
     setShipmentPlan('');
@@ -149,7 +164,7 @@ export default function AdminExpedisiDashboard() {
     }
   };
 
-  const openDeliveryModal = (invoice: any) => {
+  const openDeliveryModal = (invoice: LogisticsInvoice) => {
     setSelectedInvoice(invoice);
     setDeliveryStatus('terkirim');
     setDeliveryNotes('');
@@ -199,7 +214,7 @@ export default function AdminExpedisiDashboard() {
   };
 
   // Filter functions
-  const filterInvoices = (invoices: any[], search: string) => {
+  const filterInvoices = (invoices: LogisticsInvoice[], search: string) => {
     if (!search.trim()) return invoices;
     const query = search.toLowerCase();
     return invoices.filter(invoice => {
@@ -314,9 +329,9 @@ export default function AdminExpedisiDashboard() {
                       <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-green-900 text-green-200">
                         ✓ Siap Kirim
                       </span>
-                      {invoice.shipping_request && (
+                      {!!invoice.shipping_request && (
                         <div className="ml-2">
-                          <ShippingBadge shippingRequest={invoice.shipping_request} size="sm" />
+                          <ShippingBadge shippingRequest={String(invoice.shipping_request)} size="sm" />
                         </div>
                       )}
                     </div>
@@ -392,15 +407,15 @@ export default function AdminExpedisiDashboard() {
                           {invoice.outlet?.name || invoice.outlet_id}
                         </h3>
                         <p className="text-xs text-gray-400 mt-1">
-                          Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} • Rencana: {new Date(invoice.shipment_date).toLocaleDateString('id-ID')}
+                          Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} • Rencana: {new Date(String(invoice.shipment_date)).toLocaleDateString('id-ID')}
                         </p>
                       </div>
                       <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-yellow-900 text-yellow-200">
                         🚚 Direncanakan
                       </span>
-                      {invoice.shipping_request && (
+                      {!!invoice.shipping_request && (
                         <div className="ml-2">
-                          <ShippingBadge shippingRequest={invoice.shipping_request} size="sm" />
+                          <ShippingBadge shippingRequest={String(invoice.shipping_request)} size="sm" />
                         </div>
                       )}
                     </div>
@@ -419,7 +434,7 @@ export default function AdminExpedisiDashboard() {
                       <div>
                         <p className="text-gray-400">Tanggal Rencana</p>
                         <p className="text-white font-semibold">
-                          {new Date(invoice.shipment_date).toLocaleDateString('id-ID', { 
+                          {new Date(String(invoice.shipment_date)).toLocaleDateString('id-ID', { 
                             weekday: 'short', 
                             day: '2-digit', 
                             month: 'short', 
@@ -429,7 +444,7 @@ export default function AdminExpedisiDashboard() {
                       </div>
                     </div>
 
-                    {invoice.shipment_plan && (
+                    {!!invoice.shipment_plan && (
                       <div className="bg-gray-800 rounded p-3 mb-4 text-sm">
                         <p className="text-gray-400 mb-1">Rencana Pengiriman:</p>
                         <p className="text-gray-300">{invoice.shipment_plan}</p>

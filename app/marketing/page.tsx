@@ -1,22 +1,41 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { logOut, getCurrentUser } from '@/lib/auth';
-import { getOrders, createInvoice, getInvoicesByMarketing, updateInvoice, getPendingInvoicesByMarketing } from '@/lib/orders';
+import { logOut } from '@/lib/auth';
+import { getInvoicesByMarketing, updateInvoice, getPendingInvoicesByMarketing } from '@/lib/orders';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
 
+type MarketingInvoice = {
+  id: string;
+  amount?: number;
+  notes?: string;
+  outlet?: { name?: string; NIO?: string };
+  invoice_number?: string;
+  order_created_at?: string;
+  created_at?: string;
+  status?: string;
+  logistik_in_status?: string;
+  packing_officer_name?: string;
+  packing_notes?: string;
+  faktur_status?: string;
+  faktur_officer_name?: string;
+  faktur_notes?: string;
+  keuangan_notes?: string;
+  outlet_id?: string;
+  [key: string]: unknown;
+};
+
 export default function MarketingDashboard() {
   const router = useRouter();
-  const { user, userProfile, loading } = useAuth();
+  const { user, loading } = useAuth();
   const { hasAccess } = useRoleCheck(['marketing', 'super_admin']);
 
   const [tab, setTab] = useState<'sales' | 'invoices'>('sales');
-  const [pendingInvoices, setPendingInvoices] = useState<any[]>([]);
-  const [invoices, setInvoices] = useState<any[]>([]);
+  const [pendingInvoices, setPendingInvoices] = useState<MarketingInvoice[]>([]);
+  const [invoices, setInvoices] = useState<MarketingInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   // Search state
@@ -25,45 +44,16 @@ export default function MarketingDashboard() {
   
   // Edit invoice modal state
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editingInvoice, setEditingInvoice] = useState<any>(null);
+  const [editingInvoice, setEditingInvoice] = useState<MarketingInvoice | null>(null);
   const [editAmount, setEditAmount] = useState(0);
   const [editNotes, setEditNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   // Detail modal state for released invoices
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [detailInvoice, setDetailInvoice] = useState<any>(null);
+  const [detailInvoice, setDetailInvoice] = useState<MarketingInvoice | null>(null);
 
-  useEffect(() => {
-    if (loading || !hasAccess || !user) return;
-    fetchOrders();
-  }, [loading, hasAccess, user, tab]);
-
-  // Show page UI immediately, only show "Access Denied" if user is authenticated and doesn't have access
-  // Don't show loading spinner while auth is checking
-  if (!user && loading) {
-    return <LoadingSpinner />;
-  }
-
-  // Redirect jika tidak punya akses
-  if (!loading && user && !hasAccess) {
-    return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold mb-4 text-red-500">Access Denied</h1>
-          <p className="text-gray-400 mb-8">Anda tidak memiliki akses ke halaman ini</p>
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded text-white transition"
-          >
-            Kembali ke Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     if (!user) return;
 
     setIsLoading(true);
@@ -90,14 +80,43 @@ export default function MarketingDashboard() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [tab, user]);
+
+  useEffect(() => {
+    if (loading || !hasAccess || !user) return;
+    fetchOrders();
+  }, [loading, hasAccess, user, fetchOrders]);
+
+  // Show page UI immediately, only show "Access Denied" if user is authenticated and doesn't have access
+  // Don't show loading spinner while auth is checking
+  if (!user && loading) {
+    return <LoadingSpinner />;
+  }
+
+  // Redirect jika tidak punya akses
+  if (!loading && user && !hasAccess) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
+        <div className="text-center">
+          <h1 className="text-4xl font-bold mb-4 text-red-500">Access Denied</h1>
+          <p className="text-gray-400 mb-8">Anda tidak memiliki akses ke halaman ini</p>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded text-white transition"
+          >
+            Kembali ke Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleLogout = async () => {
     await logOut();
     router.push('/');
   };
 
-  const openEditModal = (invoice: any) => {
+  const openEditModal = (invoice: MarketingInvoice) => {
     setEditingInvoice(invoice);
     setEditAmount(invoice.amount);
     setEditNotes(invoice.notes || '');
@@ -111,7 +130,7 @@ export default function MarketingDashboard() {
     setEditNotes('');
   };
 
-  const openDetailModal = (invoice: any) => {
+  const openDetailModal = (invoice: MarketingInvoice) => {
     setDetailInvoice(invoice);
     setShowDetailModal(true);
   };
@@ -146,7 +165,7 @@ export default function MarketingDashboard() {
     }
   };
 
-  const handleDownloadPDF = (invoice: any) => {
+  const handleDownloadPDF = (invoice: MarketingInvoice) => {
     // Generate invoice content with proper formatting
     const orderDate = new Date(invoice.order_created_at || invoice.created_at);
     const formattedDate = orderDate.toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
@@ -211,7 +230,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
     URL.revokeObjectURL(url);
   };
 
-  const handleShareWhatsApp = (invoice: any) => {
+  const handleShareWhatsApp = (invoice: MarketingInvoice) => {
     const message = `
 Halo, berikut adalah detail invoice:
 
@@ -309,7 +328,7 @@ Terima kasih!
               <div className="text-center py-8 text-gray-400">Loading...</div>
             ) : pendingInvoices.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
-                Semua invoice sudah di-review oleh finance. Klik tombol "Buat Sales Order Baru" untuk membuat order baru.
+                Semua invoice sudah di-review oleh finance. Klik tombol Buat Sales Order Baru untuk membuat order baru.
               </div>
             ) : (
               <div className="space-y-4">

@@ -4,24 +4,37 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getInvoices, updateInvoiceFakturStatus } from '@/lib/orders';
-import { exportInvoiceItemsToCSV } from '@/lib/export';
 import { getEmployees, Employee } from '@/lib/employees';
-import { supabase } from '@/lib/supabase';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
 
+type FakturInvoice = {
+  id: string;
+  amount?: number;
+  notes?: string;
+  faktur_officer_name?: string;
+  faktur_notes?: string;
+  outlet?: { name?: string };
+  outlet_name?: string;
+  invoice_number?: string;
+  created_at?: string;
+  status?: string;
+  keuangan_notes?: string;
+  [key: string]: unknown;
+};
+
 export default function FakturisDashboard() {
   const router = useRouter();
-  const { user, userProfile, loading } = useAuth();
+  const { user, loading } = useAuth();
   const { hasAccess } = useRoleCheck(['fakturis', 'super_admin']);
 
-  const [invoices, setInvoices] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<FakturInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Modal state for faktur
   const [showFakturModal, setShowFakturModal] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<FakturInvoice | null>(null);
   const [fakturOfficerName, setFakturOfficerName] = useState('');
   const [fakturOfficerSearch, setFakturOfficerSearch] = useState('');
   const [showFakturDropdown, setShowFakturDropdown] = useState(false);
@@ -31,81 +44,6 @@ export default function FakturisDashboard() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
-
-  const [exportingInvoiceId, setExportingInvoiceId] = useState<string | null>(null);
-
-  const handleExportCSV = async (inv: any) => {
-    setExportingInvoiceId(inv.id);
-    try {
-      // Fetch order items
-      let orderItems: any[] = [];
-      if (inv.order_id) {
-        const { data: orderData, error } = await supabase
-          .from('orders')
-          .select('items')
-          .eq('id', inv.order_id)
-          .single();
-
-        if (!error && orderData?.items) {
-          console.log('Fetched order items:', orderData.items);
-          if (Array.isArray(orderData.items)) {
-            orderItems = orderData.items;
-          } else if (typeof orderData.items === 'string') {
-            try {
-              orderItems = JSON.parse(orderData.items);
-            } catch (e) {
-              console.error('Error parsing order items:', e);
-            }
-          }
-        }
-      }
-
-      // Fetch outlet with NIO
-      let outletData: any = inv.outlet;
-      if (inv.outlet_id && !inv.outlet?.NIO) {
-        const { data: outletInfo } = await supabase
-          .from('outlets')
-          .select('*')
-          .eq('id', inv.outlet_id)
-          .single();
-        
-        if (outletInfo) {
-          outletData = outletInfo;
-        }
-      }
-
-      // Fetch product nomor_barang for each item
-      const enrichedItems = await Promise.all(
-        orderItems.map(async (item) => {
-          let nomor_barang = item.product_id || '-';
-          
-          if (item.product_id) {
-            const { data: productData } = await supabase
-              .from('products')
-              .select('nomor_barang')
-              .eq('id', item.product_id)
-              .single();
-            
-            if (productData?.nomor_barang) {
-              nomor_barang = productData.nomor_barang;
-            }
-          }
-          
-          return { ...item, nomor_barang };
-        })
-      );
-
-      console.log('Enriched items with nomor_barang:', enrichedItems);
-
-      // Export with enriched items and outlet data
-      exportInvoiceItemsToCSV(inv, enrichedItems, outletData);
-    } catch (err) {
-      console.error('Error exporting CSV:', err);
-      alert('Error saat export CSV. Lihat console untuk detail.');
-    } finally {
-      setExportingInvoiceId(null);
-    }
-  };
 
   useEffect(() => {
     if (loading || !hasAccess) return;
@@ -179,7 +117,7 @@ export default function FakturisDashboard() {
         getEmployeeLabel(emp).toLowerCase().includes(fakturOfficerSearch.toLowerCase())
       );
 
-  const openFakturModal = (invoice: any) => {
+  const openFakturModal = (invoice: FakturInvoice) => {
     if (!loadingEmployees && employees.length === 0) {
       fetchEmployees();
     }

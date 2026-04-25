@@ -17,7 +17,7 @@ export interface StagingProduct {
  * Helper function to parse number with Indonesian format support
  * Handles both "1.000,50" (Indonesian) and "1000.50" (English) and "-" or empty
  */
-function parseNumber(value: any): number | undefined {
+function parseNumber(value: string | number | null | undefined): number | undefined {
   try {
     if (value === null || value === undefined || value === '' || value === '-') {
       return undefined;

@@ -9,6 +9,24 @@ import { PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
 import { jsPDF } from 'jspdf';
 
+interface InvoiceItem {
+  product_name?: string;
+  nama_barang?: string;
+  name?: string;
+  qty?: number;
+  quantity?: number;
+  price?: number;
+  harga?: number;
+  subtotal?: number;
+  customName?: string;
+  customPrice?: number;
+  product?: {
+    name?: string;
+    price?: number;
+  };
+  [key: string]: unknown;
+}
+
 interface Invoice {
   id: string;
   invoice_number: string;
@@ -32,7 +50,7 @@ interface Invoice {
   delivery_date?: string;
   delivery_notes?: string;
   released_at: string;
-  items?: any[];
+  items?: InvoiceItem[];
   outlet?: {
     id: string;
     name: string;
@@ -339,7 +357,7 @@ export default function AdminLogisticInPage() {
 
       pdf.setFont('', 'normal');
       let total = 0;
-      items.forEach((item: any, idx: number) => {
+      items.forEach((item: InvoiceItem, idx: number) => {
         const itemName = item.product_name || item.nama_barang || item.name || item.customName || item.product?.name || 'Unknown';
         const qty = item.qty || item.quantity || 0;
         const price = item.price || item.harga || item.product?.price || item.customPrice || 0;

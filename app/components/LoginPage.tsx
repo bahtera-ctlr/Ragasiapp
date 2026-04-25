@@ -54,7 +54,7 @@ export default function LoginPage() {
 
       // Get user profile untuk mendapatkan role
       let profile = null;
-      const { data: existingProfile, error: profileError } = await getUserProfile(authUser.user.id);
+      const { data: existingProfile } = await getUserProfile(authUser.user.id);
       
       if (existingProfile) {
         profile = existingProfile;

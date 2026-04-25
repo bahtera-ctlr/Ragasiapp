@@ -1,12 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { UserRole } from '@/lib/auth';
 
+type AuthUser = {
+  id: string;
+  email?: string | null;
+  [key: string]: unknown;
+};
+
+type UserProfile = {
+  id: string;
+  role?: UserRole;
+  [key: string]: unknown;
+};
+
 export function useAuth() {
-  const [user, setUser] = useState<any>(null);
-  const [userProfile, setUserProfile] = useState<any>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,7 +49,7 @@ export function useAuth() {
           console.error('useAuth: Error getting profile:', profileError);
         } else {
           console.log('useAuth: Profile loaded:', profile?.role);
-          setUserProfile(profile);
+          setUserProfile(profile as UserProfile);
         }
 
         setLoading(false);
@@ -64,7 +76,7 @@ export function useAuth() {
           .then(({ data }) => {
             if (data) {
               console.log('useAuth: Profile synced:', data.role);
-              setUserProfile(data);
+              setUserProfile(data as UserProfile);
             }
           });
       } else {
@@ -82,18 +94,11 @@ export function useAuth() {
 }
 
 export function useRoleCheck(requiredRoles: UserRole[]) {
-  const { user, userProfile, loading } = useAuth();
-  const [hasAccess, setHasAccess] = useState(false);
-
-  useEffect(() => {
-    if (!loading && userProfile) {
-      if (!requiredRoles.includes(userProfile.role)) {
-        setHasAccess(false);
-      } else {
-        setHasAccess(true);
-      }
-    }
-  }, [loading, userProfile, requiredRoles]);
+  const { userProfile, loading } = useAuth();
+  const hasAccess = useMemo(
+    () => !loading && !!userProfile && requiredRoles.includes(userProfile.role),
+    [loading, userProfile, requiredRoles]
+  );
 
   return { hasAccess, loading };
 }

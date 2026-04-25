@@ -1,25 +1,45 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 import { logOut } from '@/lib/auth';
 import { getOutlets, exportOutletsToCSV, exportProductsToCSV } from '@/lib/export';
 import { uploadOutletData } from '@/lib/outlets';
-import { uploadStagingProducts, getStagingProducts, parseCsvData, StagingProduct } from '@/lib/products';
+import { uploadStagingProducts, getStagingProducts, parseCsvData } from '@/lib/products';
 import { getInvoices, releaseInvoice, rejectInvoice } from '@/lib/orders';
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee, Employee } from '@/lib/employees';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
 
+type KeuanganInvoice = {
+  id?: string;
+  invoice_number?: string;
+  order_id?: string;
+  outlet_id?: string;
+  outlet?: { name?: string; NIO?: string };
+  keuangan_notes?: string;
+  status?: string;
+  created_at?: string;
+  logistik_in_status?: string;
+  faktur_status?: string;
+  shipping_request?: unknown;
+  shipment_status?: string;
+  orders?: Record<string, unknown>;
+  amount?: number;
+  packing_verified_at?: string;
+  faktur_verified_at?: string;
+  delivery_date?: string;
+  [key: string]: unknown;
+};
+
 export default function AdminKeuanganDashboard() {
   const router = useRouter();
-  const { user, userProfile, loading } = useAuth();
+  const { user, loading } = useAuth();
   const { hasAccess } = useRoleCheck(['admin_keuangan', 'super_admin']);
 
-  const [outlets, setOutlets] = useState<any[]>([]);
-  const [invoices, setInvoices] = useState<any[]>([]);
+  const [outlets, setOutlets] = useState<Record<string, unknown>[]>([]);
+  const [invoices, setInvoices] = useState<KeuanganInvoice[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [tab, setTab] = useState<'outlets' | 'outlet-import' | 'invoices' | 'master-data-barang' | 'daftar-karyawan'>('outlets');
   const [isExporting, setIsExporting] = useState(false);
@@ -37,7 +57,7 @@ export default function AdminKeuanganDashboard() {
   const [outletUploadSuccess, setOutletUploadSuccess] = useState<string | null>(null);
   
   // Master Data Barang states
-  const [stagingProducts, setStagingProducts] = useState<any[]>([]);
+  const [stagingProducts, setStagingProducts] = useState<Record<string, unknown>[]>([]);
   const [uploadError, setUploadError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState('');
@@ -45,13 +65,13 @@ export default function AdminKeuanganDashboard() {
   
   // Modal state
   const [showDecisionModal, setShowDecisionModal] = useState(false);
-  const [modalInvoice, setModalInvoice] = useState<any>(null);
+  const [modalInvoice, setModalInvoice] = useState<KeuanganInvoice | null>(null);
   const [modalAction, setModalAction] = useState<'release' | 'reject' | null>(null);
   const [modalNotes, setModalNotes] = useState('');
   
   // Invoice detail modal state
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [detailInvoice, setDetailInvoice] = useState<any>(null);
+  const [detailInvoice, setDetailInvoice] = useState<KeuanganInvoice | null>(null);
   
   // Invoice filter state
   const [invoiceFilter, setInvoiceFilter] = useState<'pending' | 'released' | 'rejected'>('pending');
@@ -79,35 +99,37 @@ export default function AdminKeuanganDashboard() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (loading || !hasAccess) return;
-    fetchData();
-  }, [loading, hasAccess, tab]);
+  const fetchStagingProducts = useCallback(async () => {
+    try {
+      setLoadingProducts(true);
+      const result = await getStagingProducts();
+      if (result.error) {
+        console.error('Error fetching products:', result.error);
+      } else {
+        setStagingProducts(result.data || []);
+        setProductPage(1); // Reset to page 1 when data is fetched
+      }
+    } finally {
+      setLoadingProducts(false);
+    }
+  }, []);
 
-  // Show page UI immediately, only show "Access Denied" if user is authenticated and doesn't have access
-  if (!user && loading) {
-    return <LoadingSpinner />;
-  }
+  const fetchEmployees = useCallback(async () => {
+    try {
+      setLoadingEmployees(true);
+      const result = await getEmployees();
+      if (result.error) {
+        console.error('Error fetching employees:', result.error);
+      } else {
+        setEmployees(result.data || []);
+        setEmployeePage(1); // Reset to page 1 when data is fetched
+      }
+    } finally {
+      setLoadingEmployees(false);
+    }
+  }, []);
 
-  // Redirect jika tidak punya akses
-  if (!loading && user && !hasAccess) {
-    return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold mb-4 text-red-500">Access Denied</h1>
-          <p className="text-gray-400 mb-8">Anda tidak memiliki akses ke halaman ini</p>
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded text-white transition"
-          >
-            Kembali ke Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       if (tab === 'outlets') {
@@ -132,45 +154,43 @@ export default function AdminKeuanganDashboard() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [tab, fetchEmployees, fetchStagingProducts]);
 
-  const fetchStagingProducts = async () => {
-    try {
-      setLoadingProducts(true);
-      const result = await getStagingProducts();
-      if (result.error) {
-        console.error('Error fetching products:', result.error);
-      } else {
-        setStagingProducts(result.data || []);
-        setProductPage(1); // Reset to page 1 when data is fetched
-      }
-    } finally {
-      setLoadingProducts(false);
-    }
-  };
+  useEffect(() => {
+    if (loading || !hasAccess) return;
+    fetchData();
+  }, [loading, hasAccess, fetchData]);
 
-  const fetchEmployees = async () => {
-    try {
-      setLoadingEmployees(true);
-      const result = await getEmployees();
-      if (result.error) {
-        console.error('Error fetching employees:', result.error);
-      } else {
-        setEmployees(result.data || []);
-        setEmployeePage(1); // Reset to page 1 when data is fetched
-      }
-    } finally {
-      setLoadingEmployees(false);
-    }
-  };
+  // Show page UI immediately, only show "Access Denied" if user is authenticated and doesn't have access
+  if (!user && loading) {
+    return <LoadingSpinner />;
+  }
+
+  // Redirect jika tidak punya akses
+  if (!loading && user && !hasAccess) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
+        <div className="text-center">
+          <h1 className="text-4xl font-bold mb-4 text-red-500">Access Denied</h1>
+          <p className="text-gray-400 mb-8">Anda tidak memiliki akses ke halaman ini</p>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded text-white transition"
+          >
+            Kembali ke Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Filter and paginate products
   const filteredProducts = stagingProducts.filter(product => {
     const searchLower = productSearch.toLowerCase();
     return (
-      (product.nomor_barang?.toLowerCase().includes(searchLower)) ||
-      (product.nama_barang?.toLowerCase().includes(searchLower)) ||
-      (product.golongan_barang?.toLowerCase().includes(searchLower))
+      (String(product.nomor_barang || '').toLowerCase().includes(searchLower)) ||
+      (String(product.nama_barang || '').toLowerCase().includes(searchLower)) ||
+      (String(product.golongan_barang || '').toLowerCase().includes(searchLower))
     );
   });
 
@@ -196,7 +216,7 @@ export default function AdminKeuanganDashboard() {
   const handleExportOutlets = async () => {
     setIsExporting(true);
     try {
-      exportOutletsToCSV(outlets);
+      exportOutletsToCSV(outlets as Parameters<typeof exportOutletsToCSV>[0]);
       alert('File outlet berhasil diunduh!');
     } catch (error) {
       console.error('Export error:', error);
@@ -290,7 +310,7 @@ export default function AdminKeuanganDashboard() {
     }
   };
 
-  const openDecisionModal = (invoice: any, action: 'release' | 'reject') => {
+  const openDecisionModal = (invoice: KeuanganInvoice, action: 'release' | 'reject') => {
     setModalInvoice(invoice);
     setModalAction(action);
     // Load existing notes if invoice is already released or rejected
@@ -305,7 +325,7 @@ export default function AdminKeuanganDashboard() {
     setModalNotes('');
   };
 
-  const openDetailModal = (invoice: any) => {
+  const openDetailModal = (invoice: KeuanganInvoice) => {
     setDetailInvoice(invoice);
     setShowDetailModal(true);
   };
@@ -435,9 +455,10 @@ export default function AdminKeuanganDashboard() {
     }
   };
 
-  const handleDownloadPDF = (invoice: any) => {
+  const handleDownloadPDF = (invoice: KeuanganInvoice) => {
     // Generate invoice content
-    const orderDate = new Date(invoice.orders?.created_at || invoice.created_at);
+    const createdAtStr = String((invoice.orders as Record<string, unknown>)?.created_at || invoice.created_at || '');
+    const orderDate = new Date(createdAtStr);
     const formattedDate = orderDate.toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
     const formattedTime = orderDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
@@ -458,11 +479,11 @@ JAM PESAN     : ${formattedTime}
 STATUS        : ${invoice.status === 'released' ? 'RELEASED' : 
                   invoice.status === 'rejected' ? 'REJECTED' : 
                   invoice.status === 'paid' ? 'PAID' : 
-                  invoice.status.toUpperCase()}
+                  (invoice.status || 'UNKNOWN').toUpperCase()}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-JUMLAH        : Rp ${invoice.amount?.toLocaleString('id-ID') || 0}
+JUMLAH        : Rp ${Number(invoice.amount || 0).toLocaleString('id-ID')}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -506,10 +527,10 @@ Generated: ${new Date().toLocaleString('id-ID')}
     if (!query) return true;
     
     return (
-      (outlet.nio?.toString().toLowerCase().includes(query)) ||
-      (outlet.name?.toLowerCase().includes(query)) ||
-      (outlet.cluster?.toLowerCase().includes(query)) ||
-      (outlet.me?.toLowerCase().includes(query))
+      (String(outlet.nio || '').toLowerCase().includes(query)) ||
+      (String(outlet.name || '').toLowerCase().includes(query)) ||
+      (String(outlet.cluster || '').toLowerCase().includes(query)) ||
+      (String(outlet.me || '').toLowerCase().includes(query))
     );
   });
 
@@ -530,10 +551,10 @@ Generated: ${new Date().toLocaleString('id-ID')}
     if (!query) return true;
     
     return (
-      (invoice.order_id?.toLowerCase().includes(query)) ||
-      (invoice.invoice_number?.toLowerCase().includes(query)) ||
-      (invoice.outlet?.name?.toLowerCase().includes(query)) ||
-      (invoice.outlet?.NIO?.toString().includes(query))
+      (String(invoice.order_id || '').toLowerCase().includes(query)) ||
+      (String(invoice.invoice_number || '').toLowerCase().includes(query)) ||
+      (String(invoice.outlet?.name || '').toLowerCase().includes(query)) ||
+      (String(invoice.outlet?.NIO || '').toLowerCase().includes(query))
     );
   });
 
@@ -698,14 +719,14 @@ Generated: ${new Date().toLocaleString('id-ID')}
                     </thead>
                     <tbody>
                       {filteredOutlets.map((outlet) => (
-                        <tr key={outlet.id} className="border-b border-gray-700 hover:bg-gray-800">
-                          <td className="px-6 py-4 text-sm font-mono">{outlet.nio || '-'}</td>
-                          <td className="px-6 py-4 text-sm">{outlet.name}</td>
-                          <td className="px-6 py-4 text-sm">{outlet.cluster || '-'}</td>
-                          <td className="px-6 py-4 text-sm">{outlet.top_hari || '-'} hari</td>
-                          <td className="px-6 py-4 text-sm">{outlet.due != null ? `${outlet.due} hari` : '-'}</td>
-                          <td className="px-6 py-4 text-sm">Rp {outlet.limit_rupiah?.toLocaleString('id-ID') || '-'}</td>
-                          <td className="px-6 py-4 text-sm">Rp {outlet.current_saldo?.toLocaleString('id-ID') || '-'}</td>
+                        <tr key={String(outlet.id)} className="border-b border-gray-700 hover:bg-gray-800">
+                          <td className="px-6 py-4 text-sm font-mono">{outlet.nio ? String(outlet.nio) : '-'}</td>
+                          <td className="px-6 py-4 text-sm">{outlet.name ? String(outlet.name) : '-'}</td>
+                          <td className="px-6 py-4 text-sm">{outlet.cluster ? String(outlet.cluster) : '-'}</td>
+                          <td className="px-6 py-4 text-sm">{outlet.top_hari ? String(outlet.top_hari) : '-'} hari</td>
+                          <td className="px-6 py-4 text-sm">{outlet.due != null ? `${String(outlet.due)} hari` : '-'}</td>
+                          <td className="px-6 py-4 text-sm">Rp {Number(outlet.limit_rupiah || 0).toLocaleString('id-ID') || '-'}</td>
+                          <td className="px-6 py-4 text-sm">Rp {Number(outlet.current_saldo || 0).toLocaleString('id-ID') || '-'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -853,7 +874,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
               <div className="space-y-4">
                 {filteredInvoices.map((invoice) => {
                   // Use order created_at if available, otherwise use invoice created_at
-                  const orderDate = invoice.orders?.created_at || invoice.created_at;
+                  const orderDate = String((invoice.orders as Record<string, unknown>)?.created_at || invoice.created_at || '');
                   const createdDate = new Date(orderDate);
                   const formattedDate = createdDate.toLocaleDateString('id-ID', { 
                     day: '2-digit', 
@@ -867,7 +888,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
 
                   return (
                   <div
-                    key={invoice.id}
+                    key={String(invoice.id)}
                     onClick={() => openDetailModal(invoice)}
                     className="bg-gray-900 border border-gray-800 rounded-lg p-4 cursor-pointer hover:border-blue-600 transition-colors"
                   >
@@ -913,55 +934,51 @@ Generated: ${new Date().toLocaleString('id-ID')}
                     {/* Amount Section */}
                     <div className="mb-3 pb-3 border-b border-gray-800">
                       <p className="text-white font-bold text-lg">
-                        Rp {invoice.amount?.toLocaleString('id-ID') || 0}
+                        Rp {Number(invoice.amount || 0).toLocaleString('id-ID')}
                       </p>
                     </div>
 
                     {/* Status Badges - Compact */}
                     <div className="flex flex-wrap gap-2 mb-3">
-                      {/* Packing Status Badge */}
                       {invoice.logistik_in_status && (
                         <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${
-                          invoice.logistik_in_status === 'terpacking'
+                          String(invoice.logistik_in_status) === 'terpacking'
                             ? 'bg-blue-900 text-blue-200'
                             : 'bg-gray-800 text-gray-300'
                         }`}>
-                          {invoice.logistik_in_status === 'terpacking' ? '📦 Packed' : '⏳ Packing'}
+                          {String(invoice.logistik_in_status) === 'terpacking' ? '📦 Packed' : '⏳ Packing'}
                         </span>
                       )}
                       
-                      {/* Faktur Status Badge */}
                       {invoice.faktur_status && (
                         <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${
-                          invoice.faktur_status === 'terfaktur'
+                          String(invoice.faktur_status) === 'terfaktur'
                             ? 'bg-purple-900 text-purple-200'
                             : 'bg-gray-800 text-gray-300'
                         }`}>
-                          {invoice.faktur_status === 'terfaktur' ? '📄 Invoiced' : '⏳ Invoicing'}
+                          {String(invoice.faktur_status) === 'terfaktur' ? '📄 Invoiced' : '⏳ Invoicing'}
                         </span>
                       )}
                       
-                      {/* Shipping Request Badge */}
-                      {invoice.shipping_request && (
-                        <ShippingBadge shippingRequest={invoice.shipping_request} size="sm" />
+                      {!!invoice.shipping_request && (
+                        <ShippingBadge shippingRequest={String(invoice.shipping_request)} size="sm" />
                       )}
 
-                      {/* Shipment Status Badge */}
                       {invoice.shipment_status && (
                         <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${
-                          invoice.shipment_status === 'ready'
+                          String(invoice.shipment_status) === 'ready'
                             ? 'bg-amber-900 text-amber-200'
-                            : invoice.shipment_status === 'planned'
+                            : String(invoice.shipment_status) === 'planned'
                             ? 'bg-orange-900 text-orange-200'
-                            : invoice.shipment_status === 'completed'
+                            : String(invoice.shipment_status) === 'completed'
                             ? 'bg-green-900 text-green-200'
                             : 'bg-gray-800 text-gray-300'
                         }`}>
-                          {invoice.shipment_status === 'ready' 
+                          {String(invoice.shipment_status) === 'ready' 
                             ? '🚚 Ready' 
-                            : invoice.shipment_status === 'planned' 
+                            : String(invoice.shipment_status) === 'planned' 
                             ? '📋 Planned' 
-                            : invoice.shipment_status === 'completed' 
+                            : String(invoice.shipment_status) === 'completed' 
                             ? '✓ Shipped' 
                             : 'Pending'}
                         </span>
@@ -1093,7 +1110,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
 
             {/* Export Button */}
             <button
-              onClick={() => exportProductsToCSV(stagingProducts)}
+              onClick={() => exportProductsToCSV(stagingProducts as Parameters<typeof exportProductsToCSV>[0])}
               className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition-colors mb-6"
             >
               📥 Export ke CSV
@@ -1168,18 +1185,18 @@ Generated: ${new Date().toLocaleString('id-ID')}
                       <tbody>
                         {paginatedProducts.map((product, idx) => (
                         <tr key={idx} className="border-b border-gray-700 hover:bg-gray-800 transition">
-                          <td className="px-4 py-3 text-white font-semibold">{product.nomor_barang}</td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">{product.golongan_barang || '-'}</td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">{product.program || '-'}</td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">{product.bobot_poin || '-'}</td>
-                          <td className="px-4 py-3 text-white">{product.nama_barang}</td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">{product.komposisi || '-'}</td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">{product.principle || '-'}</td>
-                          <td className="px-4 py-3 text-gray-400">{product.satuan || '-'}</td>
+                          <td className="px-4 py-3 text-white font-semibold">{String(product.nomor_barang || '')}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{String(product.golongan_barang || '-')}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{String(product.program || '-')}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{String(product.bobot_poin || '-')}</td>
+                          <td className="px-4 py-3 text-white">{String(product.nama_barang || '')}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{String(product.komposisi || '-')}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{String(product.principle || '-')}</td>
+                          <td className="px-4 py-3 text-gray-400">{String(product.satuan || '-')}</td>
                           <td className="px-4 py-3 text-right font-semibold">
-                            {product.harga_jual_ragasi ? `Rp ${product.harga_jual_ragasi.toLocaleString('id-ID')}` : '-'}
+                            {product.harga_jual_ragasi ? `Rp ${Number(product.harga_jual_ragasi).toLocaleString('id-ID')}` : '-'}
                           </td>
-                          <td className="px-4 py-3 text-center">{product.stok || 0}</td>
+                          <td className="px-4 py-3 text-center">{Number(product.stok || 0)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1538,10 +1555,12 @@ Generated: ${new Date().toLocaleString('id-ID')}
               </button>
               <button
                 onClick={() => {
-                  if (modalAction === 'release') {
-                    handleReleaseInvoice(modalInvoice.id);
-                  } else {
-                    handleRejectInvoice(modalInvoice.id);
+                  if (modalInvoice?.id) {
+                    if (modalAction === 'release') {
+                      handleReleaseInvoice(modalInvoice.id);
+                    } else {
+                      handleRejectInvoice(modalInvoice.id);
+                    }
                   }
                 }}
                 disabled={releaseLoading || (modalAction === 'reject' && !modalNotes.trim())}
@@ -1623,7 +1642,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
             <div className="mb-6">
               <h3 className="text-white font-semibold mb-3">Status Proses</h3>
               <div className="flex flex-wrap gap-2">
-                {detailInvoice.logistik_in_status && (
+                {!!detailInvoice.logistik_in_status && (
                   <span className={`px-3 py-2 rounded text-sm font-semibold ${
                     detailInvoice.logistik_in_status === 'terpacking'
                       ? 'bg-blue-900 text-blue-200'
@@ -1632,7 +1651,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
                     {detailInvoice.logistik_in_status === 'terpacking' ? '✓ Packed' : '⏳ Packing'}
                   </span>
                 )}
-                {detailInvoice.faktur_status && (
+                {!!detailInvoice.faktur_status && (
                   <span className={`px-3 py-2 rounded text-sm font-semibold ${
                     detailInvoice.faktur_status === 'terfaktur'
                       ? 'bg-purple-900 text-purple-200'
@@ -1641,7 +1660,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
                     {detailInvoice.faktur_status === 'terfaktur' ? '✓ Invoiced' : '⏳ Invoicing'}
                   </span>
                 )}
-                {detailInvoice.shipment_status && (
+                {!!detailInvoice.shipment_status && (
                   <span className={`px-3 py-2 rounded text-sm font-semibold ${
                     detailInvoice.shipment_status === 'ready'
                       ? 'bg-amber-900 text-amber-200'
@@ -1661,63 +1680,74 @@ Generated: ${new Date().toLocaleString('id-ID')}
 
             {/* Notes Section */}
             <div className="space-y-4">
-              {/* Keuangan Notes */}
-              {detailInvoice.keuangan_notes && (
+              {!!detailInvoice.keuangan_notes && (
                 <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
                   <h4 className="text-blue-400 font-semibold mb-2">💰 Catatan Admin Keuangan</h4>
-                  <p className="text-blue-200 text-sm">{detailInvoice.keuangan_notes}</p>
+                  <p className="text-blue-200 text-sm">{String(detailInvoice.keuangan_notes)}</p>
                 </div>
               )}
 
-              {/* Packing Notes */}
-              {detailInvoice.packing_officer_name && (
+              {!!detailInvoice.packing_officer_name && (
                 <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
                   <h4 className="text-blue-400 font-semibold mb-2">📦 Catatan Packing (Gudang)</h4>
                   <div className="space-y-1 text-blue-200 text-sm">
-                    <p><span className="text-blue-300">Petugas:</span> {detailInvoice.packing_officer_name}</p>
-                    {detailInvoice.packing_verified_at && (
-                      <p><span className="text-blue-300">Waktu Terpacking:</span> {new Date(detailInvoice.packing_verified_at).toLocaleDateString('id-ID')} {new Date(detailInvoice.packing_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>
+                    <p><span className="text-blue-300">Petugas:</span> {String(detailInvoice.packing_officer_name)}</p>
+                    {!!detailInvoice.packing_verified_at && (
+                      <p><span className="text-blue-300">Waktu Terpacking:</span> {new Date(String(detailInvoice.packing_verified_at)).toLocaleDateString('id-ID')} {new Date(String(detailInvoice.packing_verified_at)).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>
                     )}
-                    {detailInvoice.packing_notes && (
-                      <p><span className="text-blue-300">Catatan:</span> {detailInvoice.packing_notes}</p>
+                    {!!detailInvoice.packing_notes && (
+                      <p><span className="text-blue-300">Catatan:</span> {String(detailInvoice.packing_notes)}</p>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Faktur Notes */}
-              {detailInvoice.faktur_officer_name && (
+              {!!detailInvoice.faktur_officer_name && (
                 <div className="bg-purple-900/20 border border-purple-700 rounded-lg p-4">
                   <h4 className="text-purple-400 font-semibold mb-2">📄 Catatan Fakturis</h4>
                   <div className="space-y-1 text-purple-200 text-sm">
-                    <p><span className="text-purple-300">Petugas:</span> {detailInvoice.faktur_officer_name}</p>
+                    <p><span className="text-purple-300">Petugas:</span> {String(detailInvoice.faktur_officer_name)}</p>
                     {detailInvoice.faktur_verified_at && (
-                      <p><span className="text-purple-300">Waktu Faktur:</span> {new Date(detailInvoice.faktur_verified_at).toLocaleDateString('id-ID')} {new Date(detailInvoice.faktur_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>
+                      <p><span className="text-purple-300">Waktu Faktur:</span> {new Date(String(detailInvoice.faktur_verified_at)).toLocaleDateString('id-ID')} {new Date(String(detailInvoice.faktur_verified_at)).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>
                     )}
-                    {detailInvoice.faktur_notes && (
-                      <p><span className="text-purple-300">Catatan:</span> {detailInvoice.faktur_notes}</p>
+                    {!!detailInvoice.faktur_notes && (
+                      <p><span className="text-purple-300">Catatan:</span> {String(detailInvoice.faktur_notes)}</p>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Expedisi Notes */}
-              {detailInvoice.expedisi_officer_name && (
+              {!!detailInvoice.faktur_officer_name && (
+                <div className="bg-purple-900/20 border border-purple-700 rounded-lg p-4">
+                  <h4 className="text-purple-400 font-semibold mb-2">📄 Catatan Fakturis</h4>
+                  <div className="space-y-1 text-purple-200 text-sm">
+                    <p><span className="text-purple-300">Petugas:</span> {String(detailInvoice.faktur_officer_name)}</p>
+                    {!!detailInvoice.faktur_verified_at && (
+                      <p><span className="text-purple-300">Waktu Faktur:</span> {new Date(String(detailInvoice.faktur_verified_at)).toLocaleDateString('id-ID')} {new Date(String(detailInvoice.faktur_verified_at)).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>
+                    )}
+                    {!!detailInvoice.faktur_notes && (
+                      <p><span className="text-purple-300">Catatan:</span> {String(detailInvoice.faktur_notes)}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {!!detailInvoice.expedisi_officer_name && (
                 <div className="bg-amber-900/20 border border-amber-700 rounded-lg p-4">
                   <h4 className="text-amber-400 font-semibold mb-2">🚚 Catatan Expedisi</h4>
                   <div className="space-y-1 text-amber-200 text-sm">
-                    <p><span className="text-amber-300">Petugas:</span> {detailInvoice.expedisi_officer_name}</p>
-                    {detailInvoice.shipment_plan && (
-                      <p><span className="text-amber-300">Rencana Kirim:</span> {detailInvoice.shipment_plan}</p>
+                    <p><span className="text-amber-300">Petugas:</span> {String(detailInvoice.expedisi_officer_name)}</p>
+                    {!!detailInvoice.shipment_plan && (
+                      <p><span className="text-amber-300">Rencana Kirim:</span> {String(detailInvoice.shipment_plan)}</p>
                     )}
-                    {detailInvoice.shipment_date && (
-                      <p><span className="text-amber-300">Tanggal Kirim:</span> {new Date(detailInvoice.shipment_date).toLocaleDateString('id-ID')}</p>
+                    {!!detailInvoice.shipment_date && (
+                      <p><span className="text-amber-300">Tanggal Kirim:</span> {new Date(String(detailInvoice.shipment_date)).toLocaleDateString('id-ID')}</p>
                     )}
-                    {detailInvoice.delivery_notes && (
-                      <p><span className="text-amber-300">Catatan Pengiriman:</span> {detailInvoice.delivery_notes}</p>
+                    {!!detailInvoice.delivery_notes && (
+                      <p><span className="text-amber-300">Catatan Pengiriman:</span> {String(detailInvoice.delivery_notes)}</p>
                     )}
-                    {detailInvoice.delivery_date && (
-                      <p><span className="text-amber-300">Tanggal Terkirim:</span> {new Date(detailInvoice.delivery_date).toLocaleDateString('id-ID')}</p>
+                    {!!detailInvoice.delivery_date && (
+                      <p><span className="text-amber-300">Tanggal Terkirim:</span> {new Date(String(detailInvoice.delivery_date)).toLocaleDateString('id-ID')}</p>
                     )}
                   </div>
                 </div>

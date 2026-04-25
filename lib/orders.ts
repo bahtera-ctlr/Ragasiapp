@@ -21,7 +21,7 @@ export interface CreateOrderInput {
 export interface UpdateOrderInput {
   status?: string;
   notes?: string;
-  items?: any[];
+  items?: OrderItem[];
   total_amount?: number;
 }
 
@@ -331,8 +331,7 @@ export async function getPendingInvoicesByMarketing(marketingId: string) {
 
     // Fetch outlet data
     if (filteredInvoices.length > 0) {
-      const outletIds = [...new Set(filteredInvoices.map(inv => inv.outlet_id))];
-      const { data: outletsData, error: outletsError } = await supabase
+      const { data: outletsData } = await supabase
         .from('outlets')
         .select('*');
 
@@ -407,13 +406,11 @@ export async function getInvoicesByMarketing(marketingId: string) {
 
     // Fetch outlet data
     if (filteredInvoices.length > 0) {
-      const outletIds = [...new Set(filteredInvoices.map(inv => inv.outlet_id))];
-      const { data: outletsData, error: outletsError } = await supabase
+      const { data: outletsData } = await supabase
         .from('outlets')
         .select('*');
 
       console.log('Outlets data:', outletsData);
-      console.log('Outlets error:', outletsError);
 
       // Merge outlet and order data
       const outletMap = new Map((outletsData || []).map(o => [o.id, o]));
@@ -438,7 +435,7 @@ export async function getInvoicesByMarketing(marketingId: string) {
 // UPDATE INVOICE - Only before released
 export async function updateInvoice(invoiceId: string, input: Partial<CreateInvoiceInput>) {
   try {
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
 
@@ -588,7 +585,7 @@ export async function updateShipmentStatus(
   notes?: string
 ) {
   try {
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       status,
     };
 
@@ -674,8 +671,8 @@ export async function getReleasedInvoices() {
     const orderOutletIds = [...new Set((ordersData || []).map(order => order.outlet_id))].filter(Boolean);
 
     // Fetch specific outlets by id or by nio to handle refreshed outlet data
-    let outletsData: any[] = [];
-    let outletsError: any = null;
+    let outletsData: Record<string, unknown>[] = [];
+    let outletsError: unknown = null;
 
     if (outletIds.length > 0) {
       const [byIdResult, byNioResult] = await Promise.all([
@@ -698,8 +695,8 @@ export async function getReleasedInvoices() {
     }
 
     // Deduplicate outlets by id
-    const outletMap = new Map((outletsData || []).map((o: any) => [o.id, o]));
-    const outletMapByNio = new Map((outletsData || []).map((o: any) => [String(o.nio), o]));
+    const outletMap = new Map((outletsData || []).map((o: Record<string, unknown>) => [o.id, o]));
+    const outletMapByNio = new Map((outletsData || []).map((o: Record<string, unknown>) => [String(o.nio), o]));
 
     if (outletsError) {
       console.error('Error fetching outlets:', outletsError);
@@ -754,7 +751,6 @@ export async function getPackedInvoices() {
     }
 
     // Fetch outlet data
-    const outletIds = [...new Set(invoicesData.map(inv => inv.outlet_id))];
     const { data: outletsData } = await supabase
       .from('outlets')
       .select('*');
@@ -784,7 +780,7 @@ export async function updateInvoicePackingStatus(
   preservePackingVerifiedAt = false
 ) {
   try {
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       logistik_in_status: 'terpacking',
       packing_officer_name: packingOfficerName,
       packing_notes: packingNotes,
@@ -888,7 +884,7 @@ export async function updateShipmentDelivery(
   deliveryNotes?: string
 ) {
   try {
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       delivery_status: deliveryStatus,
       delivery_date: new Date().toISOString(),
       updated_at: new Date().toISOString(),

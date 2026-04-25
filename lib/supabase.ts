@@ -19,21 +19,21 @@ const createCustomStorage = () => {
     getItem: async (key: string) => {
       try {
         return localStorage.getItem(key);
-      } catch (e) {
+      } catch {
         return null;
       }
     },
     setItem: async (key: string, value: string) => {
       try {
         localStorage.setItem(key, value);
-      } catch (e) {
+      } catch {
         // Ignore errors
       }
     },
     removeItem: async (key: string) => {
       try {
         localStorage.removeItem(key);
-      } catch (e) {
+      } catch {
         // Ignore errors
       }
     },

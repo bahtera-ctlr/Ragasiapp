@@ -3,8 +3,6 @@
 import { useEffect, useMemo, useState, useRef } from "react"
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 
 type Outlet = {
   id: string;
@@ -133,7 +131,16 @@ const [resultModal, setResultModal] = useState<{
 
       if (data && data.length > 0) {
         // Map database field names to Product type field names
-        const mappedData: Product[] = data.map((item: any) => ({
+        type ProductRow = {
+          id: string;
+          nama_barang: string;
+          harga_jual_ragasi: number;
+          stok: number;
+          golongan_barang: string | null;
+          komposisi: string | null;
+        };
+
+        const mappedData: Product[] = data.map((item: ProductRow) => ({
           id: item.id,
           name: item.nama_barang,
           price: item.harga_jual_ragasi,
@@ -175,7 +182,7 @@ const [resultModal, setResultModal] = useState<{
   // ADD ITEM
   function getDiscount(
   cluster: string | null,
-  product: any,
+  product: Product,
   qty: number
 ) {
   const subtotal = product.price * qty;
@@ -241,8 +248,8 @@ function calculateSimilarity(str1: string, str2: string): number {
   const words2 = s2.split(/\s+/);
   let commonWords = 0;
   
-  for (let w1 of words1) {
-    for (let w2 of words2) {
+  for (const w1 of words1) {
+    for (const w2 of words2) {
       if (w1.length > 4 && w2.length > 4) {
         // Untuk kata panjang, harus match lebih ketat
         if (w1.startsWith(w2) || w2.startsWith(w1)) {
@@ -269,7 +276,7 @@ function calculateSimilarity(str1: string, str2: string): number {
     return 0;
   }
   
-  for (let char of shorter) {
+  for (const char of shorter) {
     if (longer.includes(char)) matches++;
   }
   
@@ -419,8 +426,6 @@ function handleBulkAdd() {
 function handleAddItem() {
   if (!selectedProduct || !selectedOutlet) return;
 
-  let isAdded = false;
-
   setCart((prev) => {
     const existing = prev.find(
       (item) => !item.isCustom && item.product && item.product.id === selectedProduct.id
@@ -458,7 +463,6 @@ function handleAddItem() {
       );
     }
 
-    isAdded = true;
     const subtotal =
       qty *
       (selectedProduct.price -
@@ -644,197 +648,6 @@ function handleAddItem() {
   await fetchProducts();
 }
 
-  // DOWNLOAD INVOICE AS PDF
-  function handleDownloadPDF() {
-    if (!resultModal?.orderData) return;
-
-    try {
-      const outlet = resultModal.orderData.outlet;
-      const items = resultModal.orderData.items;
-      const total = resultModal.orderData.total;
-
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      let yPosition = 20;
-      const margin = 15;
-      const contentWidth = pageWidth - 2 * margin;
-      const lineHeight = 7;
-
-      // Title
-      pdf.setFontSize(16);
-      pdf.setFont("", "bold");
-      pdf.text("SALES ORDER INVOICE", margin, yPosition);
-      yPosition += lineHeight + 5;
-
-      // Date
-      pdf.setFontSize(10);
-      pdf.setFont("", "normal");
-      pdf.text(`Tanggal: ${new Date().toLocaleDateString("id-ID")}`, margin, yPosition);
-      yPosition += lineHeight + 5;
-
-      // Separator
-      pdf.setDrawColor(0);
-      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 5;
-
-      // Outlet Info
-      pdf.setFontSize(11);
-      pdf.setFont("", "bold");
-      pdf.text("INFORMASI OUTLET", margin, yPosition);
-      yPosition += lineHeight + 2;
-
-      pdf.setFontSize(10);
-      pdf.setFont("", "normal");
-      pdf.text(`Nama Outlet: ${outlet.name}`, margin, yPosition);
-      yPosition += lineHeight;
-      if (outlet.me) {
-        pdf.text(`ME: ${outlet.me}`, margin, yPosition);
-        yPosition += lineHeight;
-      }
-      if (outlet.cluster) {
-        pdf.text(`Cluster: ${outlet.cluster}`, margin, yPosition);
-        yPosition += lineHeight;
-      }
-      pdf.text(`TOP: ${outlet.top_hari} hari`, margin, yPosition);
-      yPosition += lineHeight;
-      const limitTersedia = (outlet.limit_rupiah || 0) - (outlet.current_saldo || 0);
-      pdf.text(`Limit Tersedia: Rp ${limitTersedia.toLocaleString()}`, margin, yPosition);
-      yPosition += lineHeight;
-      pdf.text(`Saldo Piutang: Rp ${(outlet.current_saldo || 0).toLocaleString()}`, margin, yPosition);
-      yPosition += lineHeight;
-      if (outlet.due) {
-        pdf.text(`DUE: ${outlet.due} hari`, margin, yPosition);
-        yPosition += lineHeight;
-      }
-      yPosition += 3;
-
-      // Separator
-      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 5;
-
-      // Items Header
-      pdf.setFontSize(11);
-      pdf.setFont("", "bold");
-      pdf.text("DAFTAR BARANG", margin, yPosition);
-      yPosition += lineHeight + 3;
-
-      // Column headers
-      pdf.setFontSize(9);
-      pdf.setFont("", "bold");
-      const col1 = margin;
-      const col2 = pageWidth - margin - 60;
-      const col3 = pageWidth - margin - 45;
-      const col4 = pageWidth - margin - 20;
-
-      pdf.text("No", col1, yPosition);
-      pdf.text("Produk", col1 + 8, yPosition);
-      pdf.text("Qty", col3, yPosition);
-      pdf.text("Harga", col4, yPosition, { align: "right" });
-      yPosition += lineHeight;
-
-      // Items line
-      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 2;
-
-      // Items
-      pdf.setFont("", "normal");
-      items.forEach((item, index) => {
-        const itemName = item.isCustom ? item.customName : item.product?.name;
-        const itemPrice = item.isCustom ? item.customPrice : item.product?.price;
-        const itemSubtotal = item.subtotal;
-
-        // Check if we need a new page
-        if (yPosition > 250) {
-          pdf.addPage();
-          yPosition = 20;
-        }
-
-        pdf.setFontSize(9);
-        pdf.text(`${index + 1}`, col1, yPosition);
-        
-        // Product name with wrapping
-        const nameLines = pdf.splitTextToSize(itemName || "", 40);
-        nameLines.forEach((line: string, lineIdx: number) => {
-          pdf.text(line, col1 + 8, yPosition + lineIdx * 4);
-        });
-        
-        const nameHeight = nameLines.length * 4;
-        pdf.text(`${item.qty}`, col3, yPosition + (nameHeight - 4) / 2);
-        pdf.text(`Rp ${(itemPrice || 0).toLocaleString("id-ID")}`, col4, yPosition + (nameHeight - 4) / 2, { align: "right" });
-        
-        yPosition += Math.max(nameHeight, lineHeight);
-      });
-
-      // Separator
-      yPosition += 2;
-      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 5;
-
-      // Total
-      pdf.setFontSize(12);
-      pdf.setFont("", "bold");
-      pdf.text(`TOTAL: Rp ${total.toLocaleString("id-ID")}`, margin, yPosition, { align: "right" });
-
-      // Save
-      const fileName = `Invoice_${outlet.name}_${new Date().toISOString().slice(0, 10)}.pdf`;
-      pdf.save(fileName);
-      
-      alert("PDF berhasil diunduh!");
-    } catch (error) {
-      console.error("Error generating PDF:", error);
-      alert("Gagal download PDF: " + error);
-    }
-  }
-
-  // SHARE VIA WHATSAPP
-  function handleShareWhatsApp() {
-    if (!resultModal?.orderData) return;
-
-    const outlet = resultModal.orderData.outlet;
-    const items = resultModal.orderData.items;
-    const total = resultModal.orderData.total;
-
-    let message = `*SALES ORDER*\n\n`;
-    message += `📍 Outlet: ${outlet.name}\n`;
-    message += `� ME: ${outlet.me || "-"}\n`;
-    message += `📦 Cluster: ${outlet.cluster || "-"}\n`;
-    message += `⏱️ TOP: ${outlet.top_hari} hari\n`;
-    const limitTersedia = (outlet.limit_rupiah || 0) - (outlet.current_saldo || 0);
-    message += `💳 Limit Tersedia: Rp ${limitTersedia.toLocaleString()}\n`;
-    message += `💰 Saldo Piutang: Rp ${(outlet.current_saldo || 0).toLocaleString()}\n`;
-    if (outlet.due) {
-      message += `📅 DUE: ${outlet.due} hari\n`;
-    }
-    message += `\n`;
-    message += `\n*DETAIL PRODUK:*\n`;
-
-    items.forEach((item, index) => {
-      const productName = item.isCustom ? item.customName : item.product?.name;
-      const price = item.isCustom ? item.customPrice : item.product?.price;
-      const priceAfterDiscount = (price || 0) * (1 - item.discount / 100);
-      const subtotal = priceAfterDiscount * item.qty;
-
-      message += `\n${index + 1}. ${productName}\n`;
-      message += `   Qty: ${item.qty} unit\n`;
-      message += `   Harga: Rp ${(price || 0).toLocaleString("id-ID")}\n`;
-      message += `   Diskon: ${item.discount}%\n`;
-      message += `   Subtotal: Rp ${subtotal.toLocaleString("id-ID")}\n`;
-    });
-
-    message += `\n*TOTAL: Rp ${total.toLocaleString("id-ID")}*\n`;
-    message += `\n_Generated from Ragasi App_`;
-
-    const encodedMessage = encodeURIComponent(message);
-    const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
-    window.open(whatsappUrl, "_blank");
-  }
-
-
   // TOTAL
   const total = useMemo(() => {
     return cart.reduce((acc, item) => {
@@ -844,14 +657,6 @@ function handleAddItem() {
       return acc + priceAfterDiscount * item.qty;
     }, 0);
   }, [cart]);
-
-  const sisaLimit = useMemo(() => {
-  if (!selectedOutlet) return 0;
-
-  // Show current saldo, ensure non-negative
-  const saldo = selectedOutlet.current_saldo || 0;
-  return Math.max(0, saldo);
-}, [selectedOutlet]);
 
 const filteredProducts = useMemo(() => {
   const keyword = productSearch.toLowerCase();

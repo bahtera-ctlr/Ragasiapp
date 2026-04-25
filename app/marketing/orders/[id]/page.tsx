@@ -1,10 +1,25 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useParams } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 import { logOut } from '@/lib/auth';
+
+type OrderItem = {
+  product_id: string;
+  product_name: string;
+  qty: number;
+  price: number;
+  discount: number;
+  subtotal: number;
+};
+
+type OrderDetails = {
+  id: string;
+  items?: OrderItem[];
+  created_at?: string;
+  [key: string]: unknown;
+};
 import { getOrderById, updateOrder } from '@/lib/orders';
 import { useAuth } from '@/lib/hooks';
 import { LoadingSpinner } from '@/app/components/UIComponents';
@@ -14,19 +29,19 @@ export default function EditOrderPage() {
   const params = useParams();
   const orderId = params.id as string;
   
-  const { user, userProfile, loading } = useAuth();
+  const { user, loading } = useAuth();
 
-  const [order, setOrder] = useState<any>(null);
+  const [order, setOrder] = useState<OrderDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<OrderItem[]>([]);
 
   useEffect(() => {
     if (loading || !user) return;
     fetchOrder();
-  }, [loading, user, orderId]);
+  }, [loading, user, fetchOrder]);
 
-  const fetchOrder = async () => {
+  const fetchOrder = useCallback(async () => {
     setIsLoading(true);
     try {
       const result = await getOrderById(orderId);
@@ -43,9 +58,9 @@ export default function EditOrderPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [orderId, router]);
 
-  const handleUpdateItem = (idx: number, field: string, value: any) => {
+  const handleUpdateItem = (idx: number, field: string, value: string | number) => {
     const newItems = [...items];
     newItems[idx] = {
       ...newItems[idx],

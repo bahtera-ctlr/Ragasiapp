@@ -11,10 +11,15 @@ interface User {
   email?: string;
 }
 
+interface UserProfile {
+  role?: string;
+  [key: string]: unknown;
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

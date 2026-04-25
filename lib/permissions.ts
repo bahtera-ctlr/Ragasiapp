@@ -3,15 +3,15 @@ import { UserRole } from './auth';
 
 export async function checkUserRole(userId: string): Promise<UserRole | null> {
   try {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('users')
       .select('role')
       .eq('id', userId)
       .single();
 
-    if (error || !data) return null;
+    if (!data) return null;
     return data.role;
-  } catch (error) {
+  } catch {
     return null;
   }
 }
