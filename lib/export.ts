@@ -1,10 +1,14 @@
 import { supabase } from './supabase';
 
+type ExportRow = {
+  [key: string]: string | number | null | undefined;
+};
+
 // GET ALL ACTIVE OUTLETS - WITH PAGINATION TO BYPASS 1000 LIMIT
 export async function getOutlets() {
   try {
-    let allData: any[] = [];
-    let pageSize = 1000;
+    let allData: ExportRow[] = [];
+    const pageSize = 1000;
     let page = 0;
     let hasMore = true;
 
@@ -46,7 +50,7 @@ export async function getOutlets() {
 }
 
 // EXPORT OUTLETS TO CSV
-export function exportOutletsToCSV(outlets: any[]) {
+export function exportOutletsToCSV(outlets: ExportRow[]) {
   if (!outlets || outlets.length === 0) {
     console.error('No data to export');
     return;
@@ -99,7 +103,7 @@ export function exportOutletsToCSV(outlets: any[]) {
 }
 
 // EXPORT INVOICES TO CSV
-export function exportInvoicesToCSV(invoices: any[]) {
+export function exportInvoicesToCSV(invoices: ExportRow[]) {
   if (!invoices || invoices.length === 0) {
     console.error('No data to export');
     return;
@@ -149,7 +153,7 @@ export function exportInvoicesToCSV(invoices: any[]) {
 // EXPORT INVOICE ITEMS TO CSV (Special format for Fakturis)
 // Format: NIO, Nama Outlet, No Barang, Nama Barang, HJR, Dikson, Nett
 // Items should be passed in already with nomor_barang enriched
-export function exportInvoiceItemsToCSV(invoice: any, orderItems?: any[], outletData?: any) {
+export function exportInvoiceItemsToCSV(invoice: ExportRow, orderItems?: ExportRow[], outletData?: ExportRow) {
   if (!invoice) {
     console.error('No invoice to export');
     return;
@@ -168,7 +172,7 @@ export function exportInvoiceItemsToCSV(invoice: any, orderItems?: any[], outlet
   console.log('Outlet name:', outletName);
 
   // Parse items from parameter or invoice object
-  let items: any[] = [];
+  let items: ExportRow[] = [];
   
   // If items provided via parameter, use them
   if (orderItems && Array.isArray(orderItems) && orderItems.length > 0) {
@@ -197,7 +201,7 @@ export function exportInvoiceItemsToCSV(invoice: any, orderItems?: any[], outlet
   }
 
   // Transform items to CSV format
-  const csvData = items.map((item: any) => {
+  const csvData = items.map((item) => {
     // Use nomor_barang if available (enriched), otherwise fall back to product_id
     const nomorBarang = item.nomor_barang || item.product_id || '-';
     const productName = item.product_name || item.nama_barang || item.name || '-';
@@ -261,7 +265,7 @@ export function exportInvoiceItemsToCSV(invoice: any, orderItems?: any[], outlet
 
 // EXPORT PRODUCTS TO CSV
 // Format: NB, GOL, PRO, POIN, Nama Barang, Komposisi, Principle, Sat, HJR, Stok
-export function exportProductsToCSV(products: any[]) {
+export function exportProductsToCSV(products: ExportRow[]) {
   if (!products || products.length === 0) {
     console.error('No products to export');
     alert('Tidak ada data barang untuk di-export');
@@ -269,7 +273,7 @@ export function exportProductsToCSV(products: any[]) {
   }
 
   // Transform products to CSV format matching the import format
-  const csvData = products.map((product: any) => ({
+  const csvData = products.map((product) => ({
     'NB': product.nomor_barang || '-',
     'GOL': product.golongan_barang || '-',
     'PRO': product.program || '-',
