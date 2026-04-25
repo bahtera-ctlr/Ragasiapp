@@ -3,12 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { UserRole } from '@/lib/auth';
-
-type AuthUser = {
-  id: string;
-  email?: string | null;
-  [key: string]: unknown;
-};
+import { User } from '@supabase/supabase-js';
 
 type UserProfile = {
   id: string;
@@ -17,7 +12,7 @@ type UserProfile = {
 };
 
 export function useAuth() {
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -96,7 +91,7 @@ export function useAuth() {
 export function useRoleCheck(requiredRoles: UserRole[]) {
   const { userProfile, loading } = useAuth();
   const hasAccess = useMemo(
-    () => !loading && !!userProfile && requiredRoles.includes(userProfile.role),
+    () => !loading && !!userProfile && !!userProfile.role && requiredRoles.includes(userProfile.role),
     [loading, userProfile, requiredRoles]
   );
 

@@ -25,7 +25,16 @@ type MarketingInvoice = {
   faktur_notes?: string;
   keuangan_notes?: string;
   outlet_id?: string;
-  [key: string]: unknown;
+  order_id?: string;
+  shipping_request?: string;
+  shipment_status?: string;
+  packing_verified_at?: string;
+  faktur_verified_at?: string;
+  expedisi_officer_name?: string;
+  shipment_plan?: string;
+  shipment_date?: string;
+  delivery_notes?: string;
+  delivery_date?: string;
 };
 
 export default function MarketingDashboard() {
@@ -118,7 +127,7 @@ export default function MarketingDashboard() {
 
   const openEditModal = (invoice: MarketingInvoice) => {
     setEditingInvoice(invoice);
-    setEditAmount(invoice.amount);
+    setEditAmount(invoice.amount || 0);
     setEditNotes(invoice.notes || '');
     setShowEditModal(true);
   };
@@ -167,7 +176,7 @@ export default function MarketingDashboard() {
 
   const handleDownloadPDF = (invoice: MarketingInvoice) => {
     // Generate invoice content with proper formatting
-    const orderDate = new Date(invoice.order_created_at || invoice.created_at);
+    const orderDate = new Date(invoice.order_created_at || invoice.created_at || Date.now());
     const formattedDate = orderDate.toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
     const formattedTime = orderDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
@@ -188,7 +197,7 @@ JAM PESAN     : ${formattedTime}
 STATUS        : ${invoice.status === 'released' ? 'RELEASED' : 
                   invoice.status === 'rejected' ? 'REJECTED' : 
                   invoice.status === 'paid' ? 'PAID' : 
-                  invoice.status.toUpperCase()}
+                  (invoice.status || 'UNKNOWN').toUpperCase()}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -340,13 +349,13 @@ Terima kasih!
                     return outletName.includes(searchLower) || orderId.includes(searchLower);
                   })
                   .map((invoice) => {
-                  const createdDate = new Date(invoice.order_created_at || invoice.created_at);
-                  const formattedDate = createdDate.toLocaleDateString('id-ID', { 
+                  const orderDate = new Date(invoice.order_created_at || invoice.created_at || Date.now());
+                  const formattedDate = new Date().toLocaleDateString('id-ID', { 
                     day: '2-digit', 
                     month: 'short', 
                     year: 'numeric' 
                   });
-                  const formattedTime = createdDate.toLocaleTimeString('id-ID', { 
+                  const formattedTime = orderDate.toLocaleTimeString('id-ID', { 
                     hour: '2-digit', 
                     minute: '2-digit' 
                   });
@@ -387,7 +396,7 @@ Terima kasih!
                       <div>
                         <p className="text-gray-400">Created</p>
                         <p className="text-white">
-                          {new Date(invoice.created_at).toLocaleDateString('id-ID')}
+                          {new Date(invoice.created_at || Date.now()).toLocaleDateString('id-ID')}
                         </p>
                       </div>
                     </div>
@@ -457,7 +466,7 @@ Terima kasih!
                   .map((invoice) => {
                   // Use order created_at if available, otherwise use invoice created_at
                   const orderDate = invoice.order_created_at || invoice.created_at;
-                  const createdDate = new Date(orderDate);
+                  const createdDate = new Date(orderDate || Date.now());
                   const formattedDate = createdDate.toLocaleDateString('id-ID', { 
                     day: '2-digit', 
                     month: 'short', 
@@ -512,7 +521,7 @@ Terima kasih!
                       </p>
                       {invoice.status === 'posted' && (
                         <p className="text-xs text-gray-400 mt-2">
-                          Posted: <span className="text-white">{new Date(invoice.created_at).toLocaleDateString('id-ID')} {new Date(invoice.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                          Posted: <span className="text-white">{new Date(invoice.created_at || Date.now()).toLocaleDateString('id-ID')} {new Date(invoice.created_at || Date.now()).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
                         </p>
                       )}
                     </div>
@@ -706,7 +715,7 @@ Terima kasih!
               </div>
               {detailInvoice.status === 'posted' && (
                 <div className="mt-3 text-sm text-gray-300">
-                  Posted: <span className="text-white">{new Date(detailInvoice.created_at).toLocaleDateString('id-ID')} {new Date(detailInvoice.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                  Posted: <span className="text-white">{new Date(detailInvoice.created_at || Date.now()).toLocaleDateString('id-ID')} {new Date(detailInvoice.created_at || Date.now()).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
               )}
             </div>
@@ -767,7 +776,7 @@ Terima kasih!
                   <h4 className="text-blue-400 font-semibold mb-2">📦 Catatan Packing (Gudang)</h4>
                   <div className="space-y-1 text-blue-200 text-sm">
                     <p><span className="text-blue-300">Petugas:</span> {detailInvoice.packing_officer_name}</p>
-                    {detailInvoice.packing_verified_at && (
+                    {detailInvoice.packing_verified_at && typeof detailInvoice.packing_verified_at === 'string' && (
                       <p><span className="text-blue-300">Waktu Terpacking:</span> {new Date(detailInvoice.packing_verified_at).toLocaleDateString('id-ID')} {new Date(detailInvoice.packing_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>
                     )}
                     {detailInvoice.packing_notes && (
@@ -783,7 +792,7 @@ Terima kasih!
                   <h4 className="text-purple-400 font-semibold mb-2">📄 Catatan Fakturis</h4>
                   <div className="space-y-1 text-purple-200 text-sm">
                     <p><span className="text-purple-300">Petugas:</span> {detailInvoice.faktur_officer_name}</p>
-                    {detailInvoice.faktur_verified_at && (
+                    {detailInvoice.faktur_verified_at && typeof detailInvoice.faktur_verified_at === 'string' && (
                       <p><span className="text-purple-300">Waktu Faktur:</span> {new Date(detailInvoice.faktur_verified_at).toLocaleDateString('id-ID')} {new Date(detailInvoice.faktur_verified_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>
                     )}
                     {detailInvoice.faktur_notes && (
@@ -798,17 +807,17 @@ Terima kasih!
                 <div className="bg-amber-900/20 border border-amber-700 rounded-lg p-4">
                   <h4 className="text-amber-400 font-semibold mb-2">🚚 Catatan Expedisi</h4>
                   <div className="space-y-1 text-amber-200 text-sm">
-                    <p><span className="text-amber-300">Petugas:</span> {detailInvoice.expedisi_officer_name}</p>
+                    <p><span className="text-amber-300">Petugas:</span> {detailInvoice.expedisi_officer_name || '-'}</p>
                     {detailInvoice.shipment_plan && (
-                      <p><span className="text-amber-300">Rencana Kirim:</span> {detailInvoice.shipment_plan}</p>
+                      <p><span className="text-amber-300">Rencana Kirim:</span> {detailInvoice.shipment_plan || '-'}</p>
                     )}
-                    {detailInvoice.shipment_date && (
+                    {detailInvoice.shipment_date && typeof detailInvoice.shipment_date === 'string' && (
                       <p><span className="text-amber-300">Tanggal Kirim:</span> {new Date(detailInvoice.shipment_date).toLocaleDateString('id-ID')}</p>
                     )}
                     {detailInvoice.delivery_notes && (
                       <p><span className="text-amber-300">Catatan Pengiriman:</span> {detailInvoice.delivery_notes}</p>
                     )}
-                    {detailInvoice.delivery_date && (
+                    {detailInvoice.delivery_date && typeof detailInvoice.delivery_date === 'string' && (
                       <p><span className="text-amber-300">Tanggal Terkirim:</span> {new Date(detailInvoice.delivery_date).toLocaleDateString('id-ID')}</p>
                     )}
                   </div>

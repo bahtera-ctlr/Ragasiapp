@@ -13,6 +13,7 @@ interface User {
 
 interface UserProfile {
   role?: string;
+  name?: string;
   [key: string]: unknown;
 }
 
@@ -142,7 +143,7 @@ export default function Dashboard() {
             <div className="bg-gray-900 rounded-lg border border-gray-800 p-6">
               <h2 className="text-lg font-semibold mb-4">Profile Anda</h2>
               <p className="text-gray-300 mb-3">
-                <span className="font-semibold text-gray-200">Nama:</span> {userProfile.name}
+                <span className="font-semibold text-gray-200">Nama:</span> {userProfile.name || 'N/A'}
               </p>
               <p className="text-gray-300 mb-3">
                 <span className="font-semibold text-gray-200">Email:</span> {user?.email}
@@ -150,7 +151,7 @@ export default function Dashboard() {
               <p className="text-gray-300 mb-6">
                 <span className="font-semibold text-gray-200">Role:</span>
                 <span className="bg-blue-600 text-white text-sm px-2 py-1 rounded ml-2 capitalize">
-                  {userProfile.role.replace('_', ' ')}
+                  {userProfile.role?.replace('_', ' ') || 'N/A'}
                 </span>
               </p>
               

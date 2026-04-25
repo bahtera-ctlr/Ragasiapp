@@ -15,12 +15,24 @@ type FakturInvoice = {
   notes?: string;
   faktur_officer_name?: string;
   faktur_notes?: string;
-  outlet?: { name?: string };
+  outlet?: { name?: string; NIO?: string };
+  outlet_id?: string;
   outlet_name?: string;
   invoice_number?: string;
   created_at?: string;
   status?: string;
   keuangan_notes?: string;
+  order_id?: string;
+  released_at?: string;
+  logistik_in_status?: string;
+  faktur_status?: string;
+  shipping_request?: string | null;
+  shipment_status?: string;
+  packing_verified_at?: string;
+  faktur_verified_at?: string;
+  delivery_date?: string;
+  packing_officer_name?: string;
+  expedisi_officer_name?: string;
   [key: string]: unknown;
 };
 
@@ -231,10 +243,10 @@ export default function FakturisDashboard() {
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
                     <h3 className="text-base font-semibold text-white">
-                      {invoice.outlet?.name || invoice.outlet_id}
+                      {String(invoice.outlet?.name || invoice.outlet_id)}
                     </h3>
                     <p className="text-xs text-gray-400 mt-1">
-                      {invoice.order_id?.slice(0, 8).toUpperCase() || invoice.id.slice(0, 8)} • {invoice.outlet?.NIO ? `NIO: ${invoice.outlet.NIO}` : `Outlet: ${invoice.outlet_id}`}
+                      {invoice.order_id?.slice(0, 8).toUpperCase() || invoice.id.slice(0, 8)} • {invoice.outlet?.NIO ? `NIO: ${invoice.outlet.NIO}` : `Outlet: ${String(invoice.outlet_id)}`}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">

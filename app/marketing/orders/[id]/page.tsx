@@ -36,11 +36,6 @@ export default function EditOrderPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [items, setItems] = useState<OrderItem[]>([]);
 
-  useEffect(() => {
-    if (loading || !user) return;
-    fetchOrder();
-  }, [loading, user, fetchOrder]);
-
   const fetchOrder = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -59,6 +54,11 @@ export default function EditOrderPage() {
       setIsLoading(false);
     }
   }, [orderId, router]);
+
+  useEffect(() => {
+    if (loading || !user) return;
+    fetchOrder();
+  }, [loading, user, fetchOrder]);
 
   const handleUpdateItem = (idx: number, field: string, value: string | number) => {
     const newItems = [...items];
@@ -138,7 +138,7 @@ export default function EditOrderPage() {
     );
   }
 
-  const createdDate = new Date(order.created_at);
+  const createdDate = new Date(order.created_at || Date.now());
   const formattedDate = createdDate.toLocaleDateString('id-ID', { 
     day: '2-digit', 
     month: 'short', 
@@ -157,7 +157,7 @@ export default function EditOrderPage() {
           <div>
             <h1 className="text-2xl font-bold">Edit Sales Order</h1>
             <p className="text-gray-400 text-sm">
-              {order.outlet_name || order.outlet_id} - {formattedDate} {formattedTime}
+              {String(order.outlet_name || order.outlet_id)} - {formattedDate} {formattedTime}
             </p>
           </div>
           <button
@@ -180,7 +180,7 @@ export default function EditOrderPage() {
             </div>
             <div>
               <p className="text-gray-400 text-sm">Outlet</p>
-              <p className="text-white font-semibold">{order.outlet_name || order.outlet_id}</p>
+              <p className="text-white font-semibold">{String(order.outlet_name || order.outlet_id)}</p>
             </div>
             <div>
               <p className="text-gray-400 text-sm">Status</p>
@@ -189,7 +189,7 @@ export default function EditOrderPage() {
                   ? 'bg-yellow-900 text-yellow-200'
                   : 'bg-green-900 text-green-200'
               }`}>
-                {order.status}
+                {String(order.status)}
               </span>
             </div>
             <div>

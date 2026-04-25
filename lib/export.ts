@@ -116,7 +116,7 @@ export function exportInvoicesToCSV(invoices: ExportRow[]) {
     'Amount': invoice.amount || 0,
     'Released By': invoice.released_by || '-',
     'Released At': invoice.released_at || '-',
-    'Created At': new Date(invoice.created_at).toLocaleString('id-ID') || '-',
+    'Created At': invoice.created_at != null ? new Date(invoice.created_at).toLocaleString('id-ID') : '-',
   }));
 
   const keys = Object.keys(data[0]);
@@ -162,8 +162,8 @@ export function exportInvoiceItemsToCSV(invoice: ExportRow, orderItems?: ExportR
   console.log('Invoice object for export:', invoice);
   console.log('Outlet data:', outletData);
 
-  // Use outletData if provided, otherwise fall back to invoice.outlet
-  const outlet = outletData || invoice.outlet || {};
+  // Use outletData if provided, otherwise use an empty object
+  const outlet = outletData || {};
   const outletName = outlet.name || invoice.outlet_name || '-';
   const nio = outlet.NIO || '-';
   const invoiceNumber = invoice.invoice_number || 'Unknown';
@@ -205,10 +205,10 @@ export function exportInvoiceItemsToCSV(invoice: ExportRow, orderItems?: ExportR
     // Use nomor_barang if available (enriched), otherwise fall back to product_id
     const nomorBarang = item.nomor_barang || item.product_id || '-';
     const productName = item.product_name || item.nama_barang || item.name || '-';
-    const price = item.price || item.harga || 0;
-    const discount = item.discount || 0;
-    const qty = item.qty || item.quantity || 1;
-    
+    const price = Number(item.price) || Number(item.harga) || 0;
+    const discount = Number(item.discount) || 0;
+    const qty = Number(item.qty) || Number(item.quantity) || 1;
+
     // Nett = (price * qty) - (discount if it's amount) OR price * qty * (1 - discount/100) if it's percentage
     let nett = price * qty;
     if (discount > 0) {

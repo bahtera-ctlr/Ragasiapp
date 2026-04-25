@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getReadyToShipInvoices, getPlannedShipments, getCompletedShipments, planShipment, updateShipmentDelivery } from '@/lib/orders';
@@ -447,7 +447,7 @@ export default function AdminExpedisiDashboard() {
                     {!!invoice.shipment_plan && (
                       <div className="bg-gray-800 rounded p-3 mb-4 text-sm">
                         <p className="text-gray-400 mb-1">Rencana Pengiriman:</p>
-                        <p className="text-gray-300">{invoice.shipment_plan}</p>
+                        <p className="text-gray-300">{String(invoice.shipment_plan)}</p>
                       </div>
                     )}
 
@@ -501,7 +501,7 @@ export default function AdminExpedisiDashboard() {
                           {invoice.outlet?.name || invoice.outlet_id}
                         </h3>
                         <p className="text-xs text-gray-400 mt-1">
-                          Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} • Status: {invoice.delivery_status}
+                          Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} • Status: {String(invoice.delivery_status)}
                         </p>
                       </div>
                       <span
@@ -529,10 +529,10 @@ export default function AdminExpedisiDashboard() {
                       <div>
                         <p className="text-gray-400">Tanggal Pengiriman</p>
                         <p className="text-white font-semibold">
-                          {invoice.delivery_date ? `${new Date(invoice.delivery_date).toLocaleDateString('id-ID')} ${new Date(invoice.delivery_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : '-'}
+                          {invoice.delivery_date ? `${new Date(String(invoice.delivery_date)).toLocaleDateString('id-ID')} ${new Date(String(invoice.delivery_date)).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : '-'}
                         </p>
                       </div>
-                      {invoice.packing_verified_at && (
+                      {typeof invoice.packing_verified_at === 'string' && (
                         <div>
                           <p className="text-gray-400">Waktu Terpacking</p>
                           <p className="text-white font-semibold">
@@ -540,7 +540,7 @@ export default function AdminExpedisiDashboard() {
                           </p>
                         </div>
                       )}
-                      {invoice.faktur_verified_at && (
+                      {typeof invoice.faktur_verified_at === 'string' && (
                         <div>
                           <p className="text-gray-400">Waktu Faktur</p>
                           <p className="text-white font-semibold">
@@ -558,12 +558,16 @@ export default function AdminExpedisiDashboard() {
                       </div>
                     </div>
 
-                    {invoice.delivery_notes && (
-                      <div className="bg-gray-800 rounded p-3 mb-2 text-sm">
-                        <p className="text-gray-400 mb-1">Catatan:</p>
-                        <p className="text-gray-300">{invoice.delivery_notes}</p>
-                      </div>
-                    )}
+                    {invoice.delivery_notes != null && (
+  <div className="bg-gray-800 rounded p-3 mb-2 text-sm">
+    <p className="text-gray-400 mb-1">Catatan:</p>
+    <p className="text-gray-300">
+      {typeof invoice.delivery_notes === 'string' 
+        ? invoice.delivery_notes 
+        : JSON.stringify(invoice.delivery_notes)}
+    </p>
+  </div>
+)}
                   </div>
                 ))}
               </div>
