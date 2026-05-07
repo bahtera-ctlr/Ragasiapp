@@ -102,18 +102,17 @@ export default function MarketingDashboard() {
     fetchOrders();
   }, [loading, hasAccess, user, fetchOrders]);
 
-  // Show page UI immediately, only show "Access Denied" if user is authenticated and doesn't have access
-  // Don't show loading spinner while auth is checking
-  if (!user && loading) {
+  // Show loading while auth is checking
+  if (loading) {
     return <LoadingSpinner />;
   }
 
-  // Redirect jika tidak punya akses
-  if (!loading && user && !hasAccess) {
+  // Show access denied if user is authenticated but doesn't have access
+  if (!hasAccess || !user) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
         <div className="text-center">
-          <h1 className="text-4xl font-bold mb-4 text-red-500">Access Denied</h1>
+          <h1 className="text-4xl font-bold mb-4 text-red-500">🔒 Access Denied</h1>
           <p className="text-gray-400 mb-8">Anda tidak memiliki akses ke halaman ini</p>
           <button
             onClick={() => router.push('/dashboard')}
