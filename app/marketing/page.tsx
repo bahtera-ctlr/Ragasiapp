@@ -7,6 +7,7 @@ import { getInvoicesByMarketing, updateInvoice, getPendingInvoicesByMarketing } 
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
+import { getFakturImages, FakturImage } from '@/lib/faktur-images';
 
 type MarketingInvoice = {
   id: string;
@@ -61,6 +62,11 @@ export default function MarketingDashboard() {
   // Detail modal state for released invoices
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [detailInvoice, setDetailInvoice] = useState<MarketingInvoice | null>(null);
+
+  // Faktur images modal state
+  const [showFakturPhotosModal, setShowFakturPhotosModal] = useState(false);
+  const [fakturPhotos, setFakturPhotos] = useState<FakturImage[]>([]);
+  const [loadingFakturPhotos, setLoadingFakturPhotos] = useState(false);
 
   const fetchOrders = useCallback(async () => {
     if (!user) return;
@@ -147,6 +153,27 @@ export default function MarketingDashboard() {
   const closeDetailModal = () => {
     setShowDetailModal(false);
     setDetailInvoice(null);
+  };
+
+  const openFakturPhotosModal = async (invoiceId: string) => {
+    setShowFakturPhotosModal(true);
+    setLoadingFakturPhotos(true);
+    try {
+      const result = await getFakturImages(invoiceId);
+      if (result.error) {
+        console.error('Error fetching faktur images:', result.error);
+        setFakturPhotos([]);
+      } else {
+        setFakturPhotos(result.data || []);
+      }
+    } finally {
+      setLoadingFakturPhotos(false);
+    }
+  };
+
+  const closeFakturPhotosModal = () => {
+    setShowFakturPhotosModal(false);
+    setFakturPhotos([]);
   };
 
   const handleSaveInvoice = async () => {
@@ -789,7 +816,15 @@ Terima kasih!
               {/* Faktur Notes */}
               {detailInvoice.faktur_officer_name && (
                 <div className="bg-purple-900/20 border border-purple-700 rounded-lg p-4">
-                  <h4 className="text-purple-400 font-semibold mb-2">📄 Catatan Fakturis</h4>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-purple-400 font-semibold">📄 Catatan Fakturis</h4>
+                    <button
+                      onClick={() => openFakturPhotosModal(detailInvoice.id)}
+                      className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-1 rounded transition"
+                    >
+                      📸 Lihat Foto
+                    </button>
+                  </div>
                   <div className="space-y-1 text-purple-200 text-sm">
                     <p><span className="text-purple-300">Petugas:</span> {detailInvoice.faktur_officer_name}</p>
                     {detailInvoice.faktur_verified_at && typeof detailInvoice.faktur_verified_at === 'string' && (
@@ -849,6 +884,77 @@ Terima kasih!
             >
               Tutup
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Faktur Photos Modal */}
+      {showFakturPhotosModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-900 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gray-800 px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">📸 Foto Faktur</h2>
+              <button
+                onClick={closeFakturPhotosModal}
+                className="text-gray-400 hover:text-white text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6">
+              {loadingFakturPhotos ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-400">Loading foto...</p>
+                </div>
+              ) : fakturPhotos.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-400">Tidak ada foto faktur yang diupload</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  {fakturPhotos.map((photo) => (
+                    <div key={photo.id} className="bg-gray-800 rounded-lg overflow-hidden">
+                      {photo.public_url ? (
+                        <a
+                          href={photo.public_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block hover:opacity-80 transition"
+                        >
+                          <img
+                            src={photo.public_url}
+                            alt="Faktur"
+                            className="w-full h-48 object-cover"
+                          />
+                        </a>
+                      ) : (
+                        <div className="w-full h-48 bg-gray-700 flex items-center justify-center">
+                          <span className="text-gray-500">Image not available</span>
+                        </div>
+                      )}
+                      <div className="p-3 text-xs text-gray-400">
+                        <p className="truncate">{photo.image_path}</p>
+                        {photo.uploaded_at && (
+                          <p className="text-gray-500">
+                            {new Date(photo.uploaded_at).toLocaleDateString('id-ID')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-gray-800 px-6 py-4 border-t border-gray-700">
+              <button
+                onClick={closeFakturPhotosModal}
+                className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+              >
+                Tutup
+              </button>
+            </div>
           </div>
         </div>
       )}

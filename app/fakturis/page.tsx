@@ -8,6 +8,13 @@ import { getEmployees, Employee } from '@/lib/employees';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
+import {
+  uploadFakturImage,
+  getFakturImages,
+  deleteFakturImage,
+  uploadMultipleFakturImages,
+  FakturImage,
+} from '@/lib/faktur-images';
 
 type FakturInvoice = {
   id: string;
@@ -57,6 +64,13 @@ export default function FakturisDashboard() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
+
+  // Image upload state
+  const [fakturImages, setFakturImages] = useState<FakturImage[]>([]);
+  const [loadingImages, setLoadingImages] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [imageError, setImageError] = useState('');
+  const [dragActive, setDragActive] = useState(false);
 
   useEffect(() => {
     if (loading || !hasAccess) return;
@@ -120,6 +134,115 @@ export default function FakturisDashboard() {
     }
   };
 
+  const fetchFakturImages = async (invoiceId: string) => {
+    setLoadingImages(true);
+    try {
+      const result = await getFakturImages(invoiceId);
+      if (result.error) {
+        console.error('Error fetching images:', result.error);
+        setFakturImages([]);
+      } else {
+        setFakturImages(result.data || []);
+      }
+    } finally {
+      setLoadingImages(false);
+    }
+  };
+
+  const handleImageUpload = async (files: File[]) => {
+    if (!selectedInvoice || !user || files.length === 0) return;
+
+    setUploadingImages(true);
+    setImageError('');
+
+    try {
+      const result = await uploadMultipleFakturImages(
+        files,
+        selectedInvoice.id,
+        user.id
+      );
+
+      if (result.error) {
+        setImageError(result.error);
+      } else {
+        // Refresh images list
+        await fetchFakturImages(selectedInvoice.id);
+        alert(`${result.data?.length || 0} gambar berhasil diupload!`);
+      }
+    } catch (err) {
+      console.error('Error uploading images:', err);
+      setImageError(String(err));
+    } finally {
+      setUploadingImages(false);
+    }
+  };
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.currentTarget.files;
+    if (files) {
+      handleImageUpload(Array.from(files));
+      // Reset input
+      e.currentTarget.value = '';
+    }
+  };
+
+  const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    const files = e.dataTransfer.files;
+    if (files) {
+      handleImageUpload(Array.from(files));
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file' && items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) files.push(file);
+      }
+    }
+
+    if (files.length > 0) {
+      handleImageUpload(files);
+    }
+  };
+
+  const handleDeleteImage = async (imageId: string, imagePath: string) => {
+    if (!confirm('Hapus gambar ini?')) return;
+
+    try {
+      const result = await deleteFakturImage(imageId, imagePath);
+      if (result.error) {
+        setImageError(result.error);
+      } else {
+        // Remove from local state
+        setFakturImages(fakturImages.filter((img) => img.id !== imageId));
+        alert('Gambar berhasil dihapus');
+      }
+    } catch (err) {
+      console.error('Error deleting image:', err);
+      setImageError(String(err));
+    }
+  };
+
   const getEmployeeLabel = (employee: Employee) => {
     return employee.nama_karyawan || employee.nip || 'Nama tidak tersedia';
   };
@@ -140,7 +263,10 @@ export default function FakturisDashboard() {
     setShowFakturDropdown(false);
     setFakturNotes(invoice.faktur_notes || '');
     setFakturError('');
+    setImageError('');
     setShowFakturModal(true);
+    // Fetch images for this invoice
+    fetchFakturImages(invoice.id);
   };
 
   const closeFakturModal = () => {
@@ -151,6 +277,9 @@ export default function FakturisDashboard() {
     setShowFakturDropdown(false);
     setFakturNotes('');
     setFakturError('');
+    setImageError('');
+    setFakturImages([]);
+    setDragActive(false);
   };
 
   const handleSaveFaktur = async () => {
@@ -368,7 +497,7 @@ export default function FakturisDashboard() {
       {/* Faktur Modal */}
       {showFakturModal && selectedInvoice && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 w-full max-w-md">
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-2 text-white">
               {selectedInvoice.faktur_status === 'terfaktur' ? 'Edit Faktur' : 'Mark as Terfaktur'}
             </h2>
@@ -509,6 +638,92 @@ export default function FakturisDashboard() {
                   rows={3}
                   className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 resize-none"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  Upload Gambar Faktur (Optional)
+                </label>
+                <p className="text-xs text-gray-400 mb-2">
+                  Anda dapat upload dari file, drag-drop, atau paste gambar langsung
+                </p>
+
+                {/* Image error message */}
+                {imageError && (
+                  <div className="bg-red-900 border border-red-700 text-red-200 px-3 py-2 rounded mb-3 text-xs">
+                    {imageError}
+                  </div>
+                )}
+
+                {/* Drag-drop zone */}
+                <div
+                  onDragEnter={handleDrag}
+                  onDragLeave={handleDrag}
+                  onDragOver={handleDrag}
+                  onDrop={handleDrop}
+                  onPaste={handlePaste}
+                  className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors mb-3 ${
+                    dragActive
+                      ? 'border-blue-500 bg-blue-900/20'
+                      : 'border-gray-700 bg-gray-800/50 hover:border-gray-600'
+                  }`}
+                  tabIndex={0}
+                >
+                  <input
+                    type="file"
+                    id="faktur-file-input"
+                    multiple
+                    accept="image/*"
+                    onChange={handleFileInput}
+                    className="hidden"
+                  />
+                  <label htmlFor="faktur-file-input" className="cursor-pointer block">
+                    <div className="text-2xl mb-2">📸</div>
+                    <p className="text-sm font-medium text-white mb-1">
+                      {uploadingImages ? 'Sedang upload...' : 'Klik atau drag gambar ke sini'}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      atau Ctrl+V / Cmd+V untuk paste gambar
+                    </p>
+                  </label>
+                </div>
+
+                {/* Uploaded images gallery */}
+                {loadingImages ? (
+                  <div className="text-sm text-gray-400 text-center py-3">
+                    Memuat gambar...
+                  </div>
+                ) : fakturImages.length > 0 ? (
+                  <div>
+                    <p className="text-xs text-gray-400 mb-2">
+                      {fakturImages.length} gambar
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {fakturImages.map((image) => (
+                        <div
+                          key={image.id}
+                          className="relative group overflow-hidden rounded border border-gray-700"
+                        >
+                          <img
+                            src={image.public_url}
+                            alt="Faktur"
+                            className="w-full h-24 object-cover"
+                          />
+                          <button
+                            onClick={() => handleDeleteImage(image.id, image.image_path)}
+                            className="absolute inset-0 bg-black/0 group-hover:bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                          >
+                            <span className="text-red-400 text-lg">🗑️</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 text-center py-3">
+                    Belum ada gambar
+                  </div>
+                )}
               </div>
             </div>
 

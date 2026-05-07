@@ -8,6 +8,7 @@ import { uploadOutletData } from '@/lib/outlets';
 import { uploadStagingProducts, getStagingProducts, parseCsvData } from '@/lib/products';
 import { getInvoices, releaseInvoice, rejectInvoice } from '@/lib/orders';
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee, Employee } from '@/lib/employees';
+import { getReleasedInvoicesReport, calculateGroupedSum, exportInvoicesToCSV, downloadCSV, ReleasedInvoiceReport } from '@/lib/invoice-report';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
@@ -41,11 +42,18 @@ export default function AdminKeuanganDashboard() {
   const [outlets, setOutlets] = useState<Record<string, unknown>[]>([]);
   const [invoices, setInvoices] = useState<KeuanganInvoice[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [tab, setTab] = useState<'outlets' | 'outlet-import' | 'invoices' | 'master-data-barang' | 'daftar-karyawan'>('outlets');
+  const [tab, setTab] = useState<'outlets' | 'outlet-import' | 'invoices' | 'master-data-barang' | 'daftar-karyawan' | 'laporan-penjualan'>('outlets');
   const [isExporting, setIsExporting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [releaseSuccess, setReleaseSuccess] = useState<string | null>(null);
+  
+  // Invoice Report states
+  const [releasedInvoices, setReleasedInvoices] = useState<ReleasedInvoiceReport[]>([]);
+  const [loadingReport, setLoadingReport] = useState(false);
+  const [reportGroupBy, setReportGroupBy] = useState<'outlet_name' | 'faktur_status' | 'shipment_status' | 'logistik_in_status' | 'status'>('outlet_name');
+  const [reportGroupedData, setReportGroupedData] = useState<Array<{ name: string; count: number; sum: number }>>([]);
+  const [totalSum, setTotalSum] = useState(0);
   
   // Search states
   const [outletSearchQuery, setOutletSearchQuery] = useState('');
@@ -129,6 +137,28 @@ export default function AdminKeuanganDashboard() {
     }
   }, []);
 
+  const fetchReleasedInvoicesReport = useCallback(async (groupBy?: typeof reportGroupBy) => {
+    try {
+      setLoadingReport(true);
+      const result = await getReleasedInvoicesReport();
+      if (result.error) {
+        console.error('Error fetching report:', result.error);
+      } else {
+        const invoices = result.data || [];
+        setReleasedInvoices(invoices);
+        
+        // Calculate grouped data and total using passed groupBy or current state
+        const grouped = calculateGroupedSum(invoices, groupBy || reportGroupBy);
+        setReportGroupedData(grouped);
+        
+        const total = invoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
+        setTotalSum(total);
+      }
+    } finally {
+      setLoadingReport(false);
+    }
+  }, [reportGroupBy]);
+
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -143,6 +173,8 @@ export default function AdminKeuanganDashboard() {
         await fetchStagingProducts();
       } else if (tab === 'daftar-karyawan') {
         await fetchEmployees();
+      } else if (tab === 'laporan-penjualan') {
+        await fetchReleasedInvoicesReport();
       } else {
         const result = await getInvoices();
         if (result.error) {
@@ -154,12 +186,20 @@ export default function AdminKeuanganDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [tab, fetchEmployees, fetchStagingProducts]);
+  }, [tab, fetchEmployees, fetchStagingProducts, fetchReleasedInvoicesReport]);
 
   useEffect(() => {
     if (loading || !hasAccess) return;
     fetchData();
   }, [loading, hasAccess, fetchData]);
+
+  // Re-fetch report data when groupBy changes
+  useEffect(() => {
+    if (tab === 'laporan-penjualan' && releasedInvoices.length > 0) {
+      const grouped = calculateGroupedSum(releasedInvoices, reportGroupBy);
+      setReportGroupedData(grouped);
+    }
+  }, [reportGroupBy, tab, releasedInvoices]);
 
   // Show page UI immediately, only show "Access Denied" if user is authenticated and doesn't have access
   if (!user && loading) {
@@ -667,6 +707,21 @@ Generated: ${new Date().toLocaleString('id-ID')}
           >
             Invoice Management
           </button>
+          <button
+            onClick={() => {
+              setTab('laporan-penjualan');
+              setOutletSearchQuery('');
+              setInvoiceSearchQuery('');
+              fetchData();
+            }}
+            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
+              tab === 'laporan-penjualan'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            📊 Laporan Penjualan
+          </button>
         </div>
 
         {/* Outlets Tab */}
@@ -1047,6 +1102,133 @@ Generated: ${new Date().toLocaleString('id-ID')}
                   </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Laporan Penjualan Tab */}
+        {tab === 'laporan-penjualan' && (
+          <div>
+            <PageHeader
+              title="📊 Laporan Penjualan"
+              subtitle="Laporan invoice yang sudah di-release dengan analisis penjualan"
+            />
+
+            {/* Controls */}
+            <div className="flex gap-4 mb-6">
+              <div className="flex-1">
+                <label className="text-sm text-gray-400 mb-2 block">Grouping By:</label>
+                <select
+                  value={reportGroupBy}
+                  onChange={(e) => {
+                    setReportGroupBy(e.target.value as any);
+                  }}
+                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option value="outlet_name">Outlet Name</option>
+                  <option value="faktur_status">Faktur Status</option>
+                  <option value="shipment_status">Shipment Status</option>
+                  <option value="logistik_in_status">Logistik Status</option>
+                  <option value="status">Invoice Status</option>
+                </select>
+              </div>
+              
+              <div className="flex items-end gap-2">
+                <button
+                  onClick={() => {
+                    const csv = exportInvoicesToCSV(releasedInvoices);
+                    downloadCSV(csv, `laporan-penjualan-${new Date().toISOString().split('T')[0]}.csv`);
+                  }}
+                  className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition"
+                >
+                  📥 Export CSV
+                </button>
+              </div>
+            </div>
+
+            {loadingReport ? (
+              <div className="text-center py-8 text-gray-400">Loading report...</div>
+            ) : releasedInvoices.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">Tidak ada invoice yang di-release</div>
+            ) : (
+              <div className="space-y-6">
+                {/* Summary Card */}
+                <div className="bg-gradient-to-r from-blue-900/50 to-purple-900/50 border border-blue-700 rounded-lg p-6">
+                  <div className="grid grid-cols-3 gap-6">
+                    <div>
+                      <p className="text-gray-400 text-sm">Total Invoice</p>
+                      <p className="text-3xl font-bold text-white mt-2">{releasedInvoices.length}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 text-sm">Total Penjualan</p>
+                      <p className="text-3xl font-bold text-green-400 mt-2">
+                        Rp {totalSum.toLocaleString('id-ID')}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 text-sm">Rata-rata</p>
+                      <p className="text-3xl font-bold text-blue-400 mt-2">
+                        Rp {Math.round(totalSum / releasedInvoices.length).toLocaleString('id-ID')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Grouped Data Table */}
+                <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gray-800 border-b border-gray-700">
+                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">
+                          {reportGroupBy === 'outlet_name' ? 'Outlet' : reportGroupBy === 'faktur_status' ? 'Faktur Status' : reportGroupBy === 'shipment_status' ? 'Shipment Status' : reportGroupBy === 'logistik_in_status' ? 'Logistik Status' : 'Invoice Status'}
+                        </th>
+                        <th className="px-6 py-3 text-right text-sm font-semibold text-gray-300">Count</th>
+                        <th className="px-6 py-3 text-right text-sm font-semibold text-gray-300">Total Amount</th>
+                        <th className="px-6 py-3 text-right text-sm font-semibold text-gray-300">Percentage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportGroupedData.map((row, idx) => (
+                        <tr key={idx} className="border-b border-gray-800 hover:bg-gray-800/50 transition">
+                          <td className="px-6 py-3 text-white font-medium">{row.name}</td>
+                          <td className="px-6 py-3 text-right text-gray-300">{row.count}</td>
+                          <td className="px-6 py-3 text-right">
+                            <span className="text-green-400 font-semibold">
+                              Rp {row.sum.toLocaleString('id-ID')}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3 text-right">
+                            <span className="text-blue-400">
+                              {((row.sum / totalSum) * 100).toFixed(1)}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Detail List */}
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold text-white mb-4">Detail Invoice</h3>
+                  {releasedInvoices.map((inv) => (
+                    <div key={inv.id} className="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="text-white font-semibold">{inv.invoice_number}</p>
+                          <p className="text-sm text-gray-400">{inv.outlet_name} • {inv.outlet_nio}</p>
+                        </div>
+                        <span className="text-green-400 font-bold text-lg">
+                          Rp {inv.amount.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {new Date(inv.created_at).toLocaleDateString('id-ID')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

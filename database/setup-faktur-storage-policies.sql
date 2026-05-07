@@ -1,0 +1,29 @@
+-- DEPRECATED: Use Supabase Dashboard UI to create storage policies
+-- This file is kept for reference only
+-- 
+-- Do NOT run this SQL directly - you will get "must be owner of table objects" error
+-- 
+-- Instead, use the Supabase Dashboard:
+-- 1. Go to Storage → Buckets → faktur-images → Policies
+-- 2. Create policies through the UI as shown below
+--
+-- ============================================================
+-- STORAGE POLICIES TO CREATE (via Dashboard UI)
+-- ============================================================
+--
+-- Policy 1: Allow authenticated users to upload
+-- - Allowed operation: INSERT
+-- - For: authenticated
+-- - Definition: bucket_id = 'faktur-images'
+--
+-- Policy 2: Allow public to download/view
+-- - Allowed operation: SELECT
+-- - For: public
+-- - Definition: bucket_id = 'faktur-images'
+--
+-- Policy 3: Allow users to delete their own files
+-- - Allowed operation: DELETE
+-- - For: authenticated
+-- - Definition: bucket_id = 'faktur-images' AND owner_id = auth.uid()
+--
+-- See: FAKTUR_IMAGE_UPLOAD_FIX.md for detailed setup instructions
