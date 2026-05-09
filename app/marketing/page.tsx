@@ -68,6 +68,58 @@ export default function MarketingDashboard() {
   const [fakturPhotos, setFakturPhotos] = useState<FakturImage[]>([]);
   const [loadingFakturPhotos, setLoadingFakturPhotos] = useState(false);
 
+  // Date filter state for invoices
+  const [dateFilter, setDateFilter] = useState<'today' | '1week' | '1month' | '1q' | 'all'>('all');
+
+  // Helper function to get date range based on filter
+  const getDateRange = (filter: 'today' | '1week' | '1month' | '1q' | 'all'): { start: Date; end: Date } => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    switch (filter) {
+      case 'today':
+        return { start: today, end: now };
+      case '1week':
+        const sevenDaysAgo = new Date(today);
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        return { start: sevenDaysAgo, end: now };
+      case '1month':
+        const thirtyDaysAgo = new Date(today);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        return { start: thirtyDaysAgo, end: now };
+      case '1q':
+        const ninetyDaysAgo = new Date(today);
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+        return { start: ninetyDaysAgo, end: now };
+      default:
+        return { start: new Date(2020, 0, 1), end: now };
+    }
+  };
+
+  // Filter invoices based on date filter
+  const getFilteredInvoices = (invoiceList: MarketingInvoice[], searchTerm: string): MarketingInvoice[] => {
+    const { start, end } = getDateRange(dateFilter);
+    
+    return invoiceList.filter((invoice) => {
+      // Date filter
+      const invoiceDate = new Date(invoice.created_at || invoice.order_created_at || Date.now());
+      const isInDateRange = invoiceDate >= start && invoiceDate <= end;
+      
+      // Search filter
+      const searchLower = searchTerm.toLowerCase();
+      const outletName = invoice.outlet?.name?.toLowerCase() || '';
+      const orderId = invoice.order_id?.toLowerCase() || '';
+      const matchesSearch = outletName.includes(searchLower) || orderId.includes(searchLower);
+      
+      return isInDateRange && matchesSearch;
+    });
+  };
+
+  // Calculate total amount from filtered invoices
+  const calculateTotalAmount = (invoiceList: MarketingInvoice[], searchTerm: string): number => {
+    return getFilteredInvoices(invoiceList, searchTerm).reduce((sum, invoice) => sum + (invoice.amount || 0), 0);
+  };
+
   const fetchOrders = useCallback(async () => {
     if (!user) return;
 
@@ -474,6 +526,71 @@ Terima kasih!
               />
             </div>
 
+            {/* Date Filter Buttons */}
+            <div className="mb-6">
+              <p className="text-gray-400 text-sm mb-3">Filter Tanggal:</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setDateFilter('all')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    dateFilter === 'all'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setDateFilter('today')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    dateFilter === 'today'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  📅 Today
+                </button>
+                <button
+                  onClick={() => setDateFilter('1week')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    dateFilter === '1week'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  📆 1 Week
+                </button>
+                <button
+                  onClick={() => setDateFilter('1month')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    dateFilter === '1month'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  📊 1 Month
+                </button>
+                <button
+                  onClick={() => setDateFilter('1q')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    dateFilter === '1q'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  📈 1 Quarter
+                </button>
+              </div>
+            </div>
+
+            {/* Total Amount Display */}
+            <div className="mb-6 bg-gradient-to-r from-gray-900 to-gray-800 border border-gray-700 rounded-lg p-4">
+              <p className="text-gray-400 text-sm mb-1">Total Nilai Orderan Tercetak:</p>
+              <p className="text-3xl font-bold text-green-400">
+                Rp {calculateTotalAmount(invoices, searchInvoices).toLocaleString('id-ID')}
+              </p>
+            </div>
+
             {isLoading ? (
               <div className="text-center py-8 text-gray-400">Loading...</div>
             ) : invoices.length === 0 ? (
@@ -482,13 +599,7 @@ Terima kasih!
               </div>
             ) : (
               <div className="space-y-4">
-                {invoices
-                  .filter((invoice) => {
-                    const searchLower = searchInvoices.toLowerCase();
-                    const outletName = invoice.outlet?.name?.toLowerCase() || '';
-                    const orderId = invoice.order_id?.toLowerCase() || '';
-                    return outletName.includes(searchLower) || orderId.includes(searchLower);
-                  })
+                {getFilteredInvoices(invoices, searchInvoices)
                   .map((invoice) => {
                   // Use order created_at if available, otherwise use invoice created_at
                   const orderDate = invoice.order_created_at || invoice.created_at;
