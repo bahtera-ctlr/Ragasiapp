@@ -29,24 +29,38 @@ export default function Dashboard() {
         const { data, error } = await supabase.auth.getUser();
 
         if (error || !data.user) {
+          console.log('Dashboard: No user found, redirecting to home');
           router.push('/');
           return;
         }
 
+        console.log('Dashboard: User logged in:', data.user.email);
         setUser(data.user);
 
-        // Get user profile dari database
-        const { data: profile } = await supabase
+        // Get user profile dari database - FRESH FETCH
+        const { data: profile, error: profileError } = await supabase
           .from('users')
           .select('*')
           .eq('id', data.user.id)
           .single();
 
+        console.log('Dashboard: Profile fetch result:', { profile, profileError });
+
         if (profile) {
+          console.log('Dashboard: User role is:', profile.role);
           setUserProfile(profile);
+          
+          // Auto-redirect super_admin to admin panel
+          if (profile.role === 'super_admin') {
+            console.log('Dashboard: SUPER ADMIN DETECTED - Redirecting to /admin-super');
+            router.push('/admin-super');
+            return;
+          }
+        } else {
+          console.log('Dashboard: No profile found');
         }
       } catch (error) {
-        console.error('Error:', error);
+        console.error('Dashboard Error:', error);
       } finally {
         setLoading(false);
       }
@@ -121,6 +135,15 @@ export default function Dashboard() {
         path: '/admin-logistik-out',
         icon: '📤',
         description: 'Outbound logistics'
+      });
+    }
+
+    if (role === 'super_admin') {
+      modules.push({
+        name: 'Admin Management',
+        path: '/admin-super',
+        icon: '👥',
+        description: 'Manage users and system administration'
       });
     }
 

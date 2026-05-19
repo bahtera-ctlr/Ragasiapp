@@ -62,6 +62,11 @@ export const rolePermissions: Record<UserRole, string[]> = {
     'manage_shipments',
     'track_delivery',
   ],
+  petugas_ekspedisi: [
+    'view_orders',
+    'track_delivery',
+    'update_delivery_status',
+  ],
 };
 
 export function hasPermission(role: UserRole, permission: string): boolean {
@@ -75,6 +80,7 @@ export const roleColors: Record<UserRole, string> = {
   fakturis: 'bg-blue-900 text-blue-200',
   admin_logistik: 'bg-orange-900 text-orange-200',
   admin_ekspedisi: 'bg-red-900 text-red-200',
+  petugas_ekspedisi: 'bg-pink-900 text-pink-200',
   super_admin: 'bg-yellow-900 text-yellow-200',
 };
 
@@ -84,5 +90,6 @@ export const roleLabels: Record<UserRole, string> = {
   fakturis: 'Fakturis',
   admin_logistik: 'Admin Logistik',
   admin_ekspedisi: 'Admin Ekspedisi',
+  petugas_ekspedisi: 'Petugas Ekspedisi',
   super_admin: 'Super Admin',
 };

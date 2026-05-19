@@ -1,24 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { logIn, signUp, getUserProfile, UserRole } from '@/lib/auth';
+import { logIn, getUserProfile } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
-type AuthMode = 'login' | 'signup';
-
-const ROLES: { value: UserRole; label: string }[] = [
-  { value: 'admin_keuangan', label: 'Admin Keuangan' },
-  { value: 'marketing', label: 'Marketing' },
-  { value: 'fakturis', label: 'Fakturis' },
-  { value: 'admin_logistik', label: 'Admin Logistik' },
-  { value: 'admin_ekspedisi', label: 'Admin Ekspedisi' },
-  { value: 'super_admin', label: 'Super Admin' },
-];
-
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<AuthMode>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -26,8 +14,6 @@ export default function LoginPage() {
   // Form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [role, setRole] = useState<UserRole>('admin_keuangan');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,8 +83,9 @@ export default function LoginPage() {
         marketing: '/marketing',
         fakturis: '/fakturis',
         admin_logistik: '/admin-logistik-in',
-        admin_ekspedisi: '/admin-logistik-out',
-        super_admin: '/admin-keuangan',
+        admin_ekspedisi: '/admin-logistik-in',
+        petugas_ekspedisi: '/petugas-ekspedisi',
+        super_admin: '/admin-super',
       };
 
       console.log('Profile role:', profile?.role);
@@ -115,34 +102,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-    setLoading(true);
-
-    if (!name.trim()) {
-      setError('Nama harus diisi');
-      setLoading(false);
-      return;
-    }
-
-    const result = await signUp({ email, password, name, role });
-
-    if (result.error) {
-      setError(result.error);
-    } else {
-      setSuccess('Akun berhasil dibuat! Silakan cek email Anda untuk verifikasi.');
-      // Reset form
-      setEmail('');
-      setPassword('');
-      setName('');
-      setRole('admin_keuangan');
-      setTimeout(() => setMode('login'), 2000);
-    }
-    setLoading(false);
-  };
-
   return (
     <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -154,37 +113,7 @@ export default function LoginPage() {
 
         {/* Auth Card */}
         <div className="bg-gray-900 rounded-lg border border-gray-800 p-8">
-          {/* Tab Navigation */}
-          <div className="flex gap-2 mb-6">
-            <button
-              onClick={() => {
-                setMode('login');
-                setError(null);
-                setSuccess(null);
-              }}
-              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                mode === 'login'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-              }`}
-            >
-              Login
-            </button>
-            <button
-              onClick={() => {
-                setMode('signup');
-                setError(null);
-                setSuccess(null);
-              }}
-              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                mode === 'signup'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-              }`}
-            >
-              Signup
-            </button>
-          </div>
+          <h2 className="text-2xl font-bold text-white mb-6 text-center">Login</h2>
 
           {/* Error/Success Messages */}
           {error && (
@@ -199,113 +128,39 @@ export default function LoginPage() {
           )}
 
           {/* Login Form */}
-          {mode === 'login' && (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Masukkan email"
-                  required
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Masukkan email"
+                required
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Masukkan password"
-                  required
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Masukkan password"
+                required
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-              >
-                {loading ? 'Loading...' : 'Login'}
-              </button>
-            </form>
-          )}
-
-          {/* Signup Form */}
-          {mode === 'signup' && (
-            <form onSubmit={handleSignup} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Nama</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Masukkan nama"
-                  required
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Masukkan email"
-                  required
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Masukkan password"
-                  required
-                  minLength={6}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Role</label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                >
-                  {ROLES.map((r) => (
-                    <option key={r.value} value={r.value}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-              >
-                {loading ? 'Loading...' : 'Buat Akun'}
-              </button>
-            </form>
-          )}
-
-          {/* Footer */}
-          <p className="text-center text-sm text-gray-500 mt-4">
-            {mode === 'login'
-              ? "Belum punya akun? Klik tab Signup di atas"
-              : 'Sudah punya akun? Klik tab Login di atas'}
-          </p>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+            >
+              {loading ? 'Loading...' : 'Login'}
+            </button>
+          </form>
         </div>
       </div>
     </div>

@@ -64,8 +64,8 @@ export default function AdminLogisticInPage() {
   const router = useRouter();
   const { user } = useAuth();
   
-  // Tab state - now supports 'packing-order' and 'dropshipment'
-  const [currentTab, setCurrentTab] = useState<'packing-order' | 'dropshipment'>('packing-order');
+  // Tab state - now supports 'packing-order' and 'shipping-plan'
+  const [currentTab, setCurrentTab] = useState<'packing-order' | 'shipping-plan'>('packing-order');
   
   // Packing states
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -79,14 +79,14 @@ export default function AdminLogisticInPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // Dropshipment modal states
-  const [showDropshipmentModal, setShowDropshipmentModal] = useState(false);
-  const [selectedDropshipmentInvoice, setSelectedDropshipmentInvoice] = useState<Invoice | null>(null);
+  // Shipping Plan modal states
+  const [showShippingPlanModal, setShowShippingPlanModal] = useState(false);
+  const [selectedShippingPlanInvoice, setSelectedShippingPlanInvoice] = useState<Invoice | null>(null);
   const [expedisiOfficerName, setExpedisiOfficerName] = useState('');
   const [expedisiOfficerSearch, setExpedisiOfficerSearch] = useState('');
   const [showExpedisiDropdown, setShowExpedisiDropdown] = useState(false);
-  const [dropshipmentError, setDropshipmentError] = useState('');
-  const [dropshipmentSaving, setDropshipmentSaving] = useState(false);
+  const [shippingPlanError, setShippingPlanError] = useState('');
+  const [shippingSaving, setShippingSaving] = useState(false);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
@@ -103,7 +103,6 @@ export default function AdminLogisticInPage() {
   const filteredEmployeesForExpedisi = employees.filter(emp =>
     getEmployeeLabel(emp).toLowerCase().includes(expedisiOfficerSearch.toLowerCase())
   );
-
 
   useEffect(() => {
     console.log('useEffect triggered - user:', user);
@@ -160,7 +159,7 @@ export default function AdminLogisticInPage() {
   // Only show released invoices in the Logistic-In page
   const releasedInvoices = invoices.filter(inv => inv.status?.toLowerCase() === 'released');
   const packingOrderInvoices = releasedInvoices.filter(inv => inv.logistik_in_status !== 'terpacking');
-  const dropshipmentInvoices = releasedInvoices.filter(inv => inv.logistik_in_status === 'terpacking');
+  const shippingPlanInvoices = releasedInvoices.filter(inv => inv.logistik_in_status === 'terpacking');
 
   const openPackingModal = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
@@ -181,58 +180,59 @@ export default function AdminLogisticInPage() {
     setError('');
   };
 
-  const openDropshipmentModal = (invoice: Invoice) => {
-    setSelectedDropshipmentInvoice(invoice);
+  const openShippingPlanModal = (invoice: Invoice) => {
+    setSelectedShippingPlanInvoice(invoice);
     setExpedisiOfficerName(invoice.expedisi_officer_name || '');
     setExpedisiOfficerSearch(invoice.expedisi_officer_name || '');
     setShowExpedisiDropdown(false);
-    setShowDropshipmentModal(true);
+    setShippingPlanError('');
+    setShowShippingPlanModal(true);
   };
 
-  const closeDropshipmentModal = () => {
-    setShowDropshipmentModal(false);
-    setSelectedDropshipmentInvoice(null);
+  const closeShippingPlanModal = () => {
+    setShowShippingPlanModal(false);
+    setSelectedShippingPlanInvoice(null);
     setExpedisiOfficerName('');
     setExpedisiOfficerSearch('');
     setShowExpedisiDropdown(false);
-    setDropshipmentError('');
+    setShippingPlanError('');
   };
 
-  const handleDropshipmentSubmit = async () => {
-    if (!selectedDropshipmentInvoice) return;
+  const handleShippingPlanSubmit = async () => {
+    if (!selectedShippingPlanInvoice) return;
     if (!expedisiOfficerName.trim()) {
-      setDropshipmentError('Nama petugas ekspedisi wajib diisi');
+      setShippingPlanError('Nama petugas ekspedisi wajib diisi');
       return;
     }
 
     try {
-      setDropshipmentSaving(true);
+      setShippingSaving(true);
       // Change shipment_status from null/ready to 'planned' when assigning to expedisi officer
       const { data, error } = await updateInvoicePackingStatus(
-        selectedDropshipmentInvoice.id,
-        selectedDropshipmentInvoice.packing_officer_name || '',
-        selectedDropshipmentInvoice.packing_notes || '',
+        selectedShippingPlanInvoice.id,
+        selectedShippingPlanInvoice.packing_officer_name || '',
+        selectedShippingPlanInvoice.packing_notes || '',
         user?.id || '',
         expedisiOfficerName,
         'planned'  // Set shipment status to planned
       );
 
       if (error) {
-        setDropshipmentError(error);
+        setShippingPlanError(error);
       } else {
         // Update local state
         setInvoices(invoices.map(inv => 
-          inv.id === selectedDropshipmentInvoice.id 
-            ? { ...data, outlet: selectedDropshipmentInvoice.outlet }
+          inv.id === selectedShippingPlanInvoice.id 
+            ? { ...data, outlet: selectedShippingPlanInvoice.outlet }
             : inv
         ));
-        closeDropshipmentModal();
+        closeShippingPlanModal();
       }
     } catch (err) {
       console.error('Error:', err);
-      setDropshipmentError(String(err));
+      setShippingPlanError(String(err));
     } finally {
-      setDropshipmentSaving(false);
+      setShippingSaving(false);
     }
   };
 
@@ -447,14 +447,14 @@ export default function AdminLogisticInPage() {
             📦 Packing Order ({packingOrderInvoices.length})
           </button>
           <button
-            onClick={() => setCurrentTab('dropshipment')}
+            onClick={() => setCurrentTab('shipping-plan')}
             className={`py-3 px-6 font-medium transition-colors ${
-              currentTab === 'dropshipment'
+              currentTab === 'shipping-plan'
                 ? 'border-b-2 border-blue-500 text-blue-400'
                 : 'text-gray-400 hover:text-gray-300'
             }`}
           >
-            🚚 Dropshipment ({dropshipmentInvoices.length})
+            📋 Rencana Pengiriman ({shippingPlanInvoices.length})
           </button>
         </div>
 
@@ -468,8 +468,8 @@ export default function AdminLogisticInPage() {
                 <div className="text-3xl font-bold text-red-500">{packingOrderInvoices.length}</div>
               </div>
               <div className="bg-gray-900 rounded p-4">
-                <div className="text-sm text-gray-400">Siap Dropshipment</div>
-                <div className="text-3xl font-bold text-green-500">{dropshipmentInvoices.length}</div>
+                <div className="text-sm text-gray-400">Total Rencana Pengiriman</div>
+                <div className="text-3xl font-bold text-green-500">{shippingPlanInvoices.length}</div>
               </div>
             </div>
 
@@ -706,14 +706,14 @@ export default function AdminLogisticInPage() {
           )}
           </div>
         )}
-        {/* Dropshipment Tab */}
-        {currentTab === 'dropshipment' && (
+        {/* Shipping Plan Tab */}
+        {currentTab === 'shipping-plan' && (
           <div>
             {/* Stats */}
             <div className="grid grid-cols-1 gap-4 mb-6">
               <div className="bg-gray-900 rounded p-4">
-                <div className="text-sm text-gray-400">Total Siap Dropshipment</div>
-                <div className="text-3xl font-bold text-green-500">{dropshipmentInvoices.length}</div>
+                <div className="text-sm text-gray-400">Total Rencana Pengiriman</div>
+                <div className="text-3xl font-bold text-green-500">{shippingPlanInvoices.length}</div>
               </div>
             </div>
 
@@ -727,13 +727,13 @@ export default function AdminLogisticInPage() {
               <div className="text-center py-12">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
               </div>
-            ) : dropshipmentInvoices.length === 0 ? (
+            ) : shippingPlanInvoices.length === 0 ? (
               <div className="text-center py-12 text-gray-400">
-                Tidak ada packing yang siap untuk dropshipment
+                Tidak ada packing yang siap untuk rencana pengiriman
               </div>
             ) : (
               <div className="space-y-4">
-                {dropshipmentInvoices.map(invoice => (
+                {shippingPlanInvoices.map(invoice => (
                   <div
                     key={invoice.id}
                     className="bg-gray-900 border border-gray-800 rounded-lg p-4 cursor-pointer hover:border-blue-600 transition-colors"
@@ -821,7 +821,7 @@ export default function AdminLogisticInPage() {
                         📥 Download Invoice
                       </button>
                       <button
-                        onClick={() => openDropshipmentModal(invoice)}
+                        onClick={() => openShippingPlanModal(invoice)}
                         className="flex-1 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-semibold transition"
                       >
                         {invoice.expedisi_officer_name ? '✏️ Edit Expedisi' : '🚚 Serah ke Expedisi'}
@@ -941,8 +941,8 @@ export default function AdminLogisticInPage() {
         </div>
       )}
 
-      {/* Dropshipment Modal */}
-      {showDropshipmentModal && selectedDropshipmentInvoice && (
+      {/* Shipping Plan Modal */}
+      {showShippingPlanModal && selectedShippingPlanInvoice && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 rounded-lg p-6 w-full max-w-md max-h-96 overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">Serah ke Expedisi</h2>
@@ -951,7 +951,7 @@ export default function AdminLogisticInPage() {
               <div>
                 <label className="block text-sm font-semibold mb-2">Invoice</label>
                 <div className="bg-gray-800 rounded px-3 py-2 text-sm">
-                  {getInvoiceHeaderTitle(selectedDropshipmentInvoice)}
+                  {getInvoiceHeaderTitle(selectedShippingPlanInvoice)}
                 </div>
               </div>
 
@@ -960,23 +960,19 @@ export default function AdminLogisticInPage() {
                 <div className="bg-green-900/30 border border-green-700 rounded px-3 py-2 text-sm space-y-2">
                   <div className="text-green-400">✓ Terpacking</div>
                   <div className="text-xs text-green-300">
-                    Petugas: {selectedDropshipmentInvoice.packing_officer_name}
+                    Petugas: {selectedShippingPlanInvoice.packing_officer_name}
                   </div>
-                  {selectedDropshipmentInvoice.packing_verified_at && (
+                  {selectedShippingPlanInvoice.packing_verified_at && (
                     <div className="text-xs text-green-200">
-                      Waktu Terpacking: {formatDate(selectedDropshipmentInvoice.packing_verified_at)}
+                      Waktu Terpacking: {formatDate(selectedShippingPlanInvoice.packing_verified_at)}
                     </div>
                   )}
-                  {selectedDropshipmentInvoice.faktur_verified_at && (
+                  {selectedShippingPlanInvoice.faktur_verified_at && (
                     <div className="text-xs text-purple-200">
-                      Waktu Faktur: {formatDate(selectedDropshipmentInvoice.faktur_verified_at)}
+                      Waktu Faktur: {formatDate(selectedShippingPlanInvoice.faktur_verified_at)}
                     </div>
                   )}
-                  {selectedDropshipmentInvoice.delivery_date && (
-                    <div className="text-xs text-amber-200">
-                      Waktu Terkirim: {new Date(selectedDropshipmentInvoice.delivery_date).toLocaleDateString('id-ID')} {new Date(selectedDropshipmentInvoice.delivery_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  )}
+
                 </div>
               </div>
 
@@ -1027,26 +1023,26 @@ export default function AdminLogisticInPage() {
               </div>
             </div>
 
-            {dropshipmentError && (
+            {shippingPlanError && (
               <div className="bg-red-900 border border-red-700 text-red-200 px-3 py-2 rounded mb-4 text-sm">
-                {dropshipmentError}
+                {shippingPlanError}
               </div>
             )}
 
             <div className="flex gap-2">
               <button
-                onClick={closeDropshipmentModal}
-                disabled={dropshipmentSaving}
+                onClick={() => setShowShippingPlanModal(false)}
+                disabled={shippingSaving}
                 className="flex-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 px-4 py-2 rounded font-semibold transition"
               >
                 Batal
               </button>
               <button
-                onClick={handleDropshipmentSubmit}
-                disabled={dropshipmentSaving}
+                onClick={handleShippingPlanSubmit}
+                disabled={shippingSaving}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-4 py-2 rounded font-semibold transition"
               >
-                {dropshipmentSaving ? 'Menyimpan...' : 'Serah Dropshipment'}
+                {shippingSaving ? 'Menyimpan...' : 'Simpan Rencana Pengiriman'}
               </button>
             </div>
           </div>

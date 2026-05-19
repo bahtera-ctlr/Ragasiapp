@@ -23,12 +23,12 @@ type LogisticsInvoice = {
   [key: string]: unknown;
 };
 
-export default function AdminExpedisiDashboard() {
+export default function PetugasExpedisiDashboard() {
   const router = useRouter();
   const { user, loading } = useAuth();
-  const { hasAccess } = useRoleCheck(['admin_ekspedisi', 'super_admin']);
+  const { hasAccess } = useRoleCheck(['petugas_ekspedisi', 'super_admin']);
 
-  const [tab, setTab] = useState<'ready' | 'planned' | 'completed'>('ready');
+  const [tab, setTab] = useState<'ready' | 'planned' | 'completed'>('completed');
   const [readyToShip, setReadyToShip] = useState<LogisticsInvoice[]>([]);
   const [plannedShipments, setPlannedShipments] = useState<LogisticsInvoice[]>([]);
   const [completedShipments, setCompletedShipments] = useState<LogisticsInvoice[]>([]);
@@ -39,7 +39,7 @@ export default function AdminExpedisiDashboard() {
   const [searchPlanned, setSearchPlanned] = useState('');
   const [searchCompleted, setSearchCompleted] = useState('');
 
-  // Modal states
+  // Plan modal states
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<LogisticsInvoice | null>(null);
   const [expedisiOfficerName, setExpedisiOfficerName] = useState('');
@@ -47,6 +47,7 @@ export default function AdminExpedisiDashboard() {
   const [planError, setPlanError] = useState('');
   const [savingPlan, setSavingPlan] = useState(false);
 
+  // Delivery modal states
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [deliveryStatus, setDeliveryStatus] = useState<'terkirim' | 'gagal_kirim'>('terkirim');
   const [deliveryNotes, setDeliveryNotes] = useState('');
@@ -238,8 +239,8 @@ export default function AdminExpedisiDashboard() {
       <header className="bg-gray-900 border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold">Admin Ekspedisi</h1>
-            <p className="text-gray-400 text-sm">Monitor Pengiriman & Delivery</p>
+            <h1 className="text-2xl font-bold">Admin Ekspedisi Dashboard</h1>
+            <p className="text-gray-400 text-sm">Kelola pengiriman & tracking shipment</p>
           </div>
           <button
             onClick={handleLogout}
@@ -577,7 +578,7 @@ export default function AdminExpedisiDashboard() {
       </main>
 
       {/* Plan Shipment Modal */}
-      {showPlanModal && selectedInvoice && (
+      {showPlanModal && selectedInvoice && !(!showPlanModal) && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 w-full max-w-md">
             <h2 className="text-xl font-bold mb-2 text-white">
@@ -707,3 +708,4 @@ export default function AdminExpedisiDashboard() {
     </div>
   );
 }
+

@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-export type UserRole = 'admin_keuangan' | 'marketing' | 'fakturis' | 'admin_logistik' | 'admin_ekspedisi' | 'super_admin';
+export type UserRole = 'admin_keuangan' | 'marketing' | 'fakturis' | 'admin_logistik' | 'admin_ekspedisi' | 'petugas_ekspedisi' | 'super_admin';
 
 export interface CreateUserInput {
   email: string;
