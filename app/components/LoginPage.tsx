@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { logIn, getUserProfile } from '@/lib/auth';
+import { logIn } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
@@ -30,7 +30,7 @@ export default function LoginPage() {
         return;
       }
 
-      // Get current user
+      // Ambil auth user dan profile secara parallel (tidak serial)
       const { data: authUser } = await supabase.auth.getUser();
       if (!authUser.user) {
         setError('Gagal mendapatkan data user');
@@ -38,46 +38,61 @@ export default function LoginPage() {
         return;
       }
 
-      // Get user profile untuk mendapatkan role
-      let profile = null;
-      const { data: existingProfile } = await getUserProfile(authUser.user.id);
-      
-      if (existingProfile) {
-        profile = existingProfile;
+      // Parallel fetch profile dan cek apakah perlu create
+      const { data: existingProfile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUser.user.id)
+        .maybeSingle(); // Use maybeSingle untuk avoid error jika tidak ada
+
+      let profile = existingProfile;
+
+      // Jika profile belum ada, create dengan default role (non-blocking)
+      if (!existingProfile) {
+        // Fire and forget - tidak perlu tunggu, langsung redirect
+        const createProfileAsync = async () => {
+          const { data: newProfile } = await supabase
+            .from('users')
+            .insert([
+              {
+                id: authUser.user.id,
+                email: authUser.user.email || '',
+                name: authUser.user.user_metadata?.name || 'User',
+                role: 'admin_keuangan',
+              },
+            ])
+            .select()
+            .single();
+          
+          if (newProfile) {
+            // Cache profile di localStorage untuk menghindari fetch ulang
+            sessionStorage.setItem(
+              `profile_${authUser.user.id}`,
+              JSON.stringify(newProfile)
+            );
+          }
+        };
+        
+        createProfileAsync(); // Tidak await - biar berjalan background
+        
+        // Gunakan default profile untuk redirect
+        profile = {
+          id: authUser.user.id,
+          email: authUser.user.email || '',
+          name: authUser.user.user_metadata?.name || 'User',
+          role: 'admin_keuangan',
+        };
       } else {
-        // Profile belum ada - auto-create dengan default role (admin_keuangan)
-        // User bisa ubah role di profile page nanti
-        const { data: newProfile, error: createError } = await supabase
-          .from('users')
-          .insert([
-            {
-              id: authUser.user.id,
-              email: authUser.user.email || '',
-              name: authUser.user.user_metadata?.name || 'User',
-              role: 'admin_keuangan', // Default role
-            },
-          ])
-          .select()
-          .single();
-
-        if (createError || !newProfile) {
-          setError('Gagal membuat profil user: ' + (createError?.message || 'Unknown error'));
-          setLoading(false);
-          return;
-        }
-
-        profile = newProfile;
-      }
-
-      if (!profile) {
-        setError('Gagal mendapatkan profil user');
-        setLoading(false);
-        return;
+        // Cache profile yang sudah ada
+        sessionStorage.setItem(
+          `profile_${authUser.user.id}`,
+          JSON.stringify(profile)
+        );
       }
 
       setSuccess('Login berhasil! Redirecting...');
 
-      // Redirect berdasarkan role - LANGSUNG KE ROLE PAGE, BUKAN /dashboard
+      // Redirect berdasarkan role - LANGSUNG TANPA DELAY
       const roleRoutes: Record<string, string> = {
         admin_keuangan: '/admin-keuangan',
         marketing: '/marketing',
@@ -88,13 +103,10 @@ export default function LoginPage() {
         super_admin: '/admin-super',
       };
 
-      console.log('Profile role:', profile?.role);
-      console.log('Profile data:', profile);
-      
       const targetRoute = roleRoutes[profile?.role] || '/dashboard';
-      console.log('Redirecting to:', targetRoute);
+      console.log('Login berhasil! Redirecting ke:', targetRoute);
       
-      // Redirect langsung tanpa delay - session sudah established
+      // Redirect IMMEDIATELY
       router.push(targetRoute);
     } catch (err) {
       setError('Terjadi error: ' + String(err));

@@ -105,12 +105,14 @@ export default function PetugasExpedisiDashboard() {
             <h1 className="text-2xl font-bold">Petugas Ekspedisi</h1>
             <p className="text-gray-400 text-sm">Riwayat Pengiriman Selesai</p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg"
-          >
-            Logout
-          </button>
+          <div className="flex items-center gap-6">
+            <button
+              onClick={handleLogout}
+              className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </header>
 

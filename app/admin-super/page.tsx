@@ -375,12 +375,14 @@ export default function AdminSuperDashboard() {
               <h1 className="text-3xl font-bold text-white">Super Admin Dashboard</h1>
               <p className="text-gray-400 text-sm mt-1">Manajemen Sistem & Penjualan</p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition"
-            >
-              Logout
-            </button>
+            <div className="flex items-center gap-6">
+              <button
+                onClick={handleLogout}
+                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </div>

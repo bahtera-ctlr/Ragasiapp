@@ -91,6 +91,10 @@ export default function AdminLogisticInPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
 
+  // Search states for invoices
+  const [packingOrderSearch, setPackingOrderSearch] = useState('');
+  const [shippingPlanSearch, setShippingPlanSearch] = useState('');
+
   const getEmployeeLabel = (employee: Employee) => {
     return employee.nama_karyawan || employee.nip || 'Nama tidak tersedia';
   };
@@ -158,8 +162,28 @@ export default function AdminLogisticInPage() {
 
   // Only show released invoices in the Logistic-In page
   const releasedInvoices = invoices.filter(inv => inv.status?.toLowerCase() === 'released');
-  const packingOrderInvoices = releasedInvoices.filter(inv => inv.logistik_in_status !== 'terpacking');
-  const shippingPlanInvoices = releasedInvoices.filter(inv => inv.logistik_in_status === 'terpacking');
+  const packingOrderInvoices = releasedInvoices
+    .filter(inv => inv.logistik_in_status !== 'terpacking')
+    .filter(inv => {
+      const searchLower = packingOrderSearch.toLowerCase();
+      return (
+        inv.invoice_number?.toLowerCase().includes(searchLower) ||
+        inv.outlet?.name?.toLowerCase().includes(searchLower) ||
+        inv.outlet?.nio?.toLowerCase().includes(searchLower) ||
+        inv.amount?.toString().includes(searchLower)
+      );
+    });
+  const shippingPlanInvoices = releasedInvoices
+    .filter(inv => inv.logistik_in_status === 'terpacking')
+    .filter(inv => {
+      const searchLower = shippingPlanSearch.toLowerCase();
+      return (
+        inv.invoice_number?.toLowerCase().includes(searchLower) ||
+        inv.outlet?.name?.toLowerCase().includes(searchLower) ||
+        inv.outlet?.nio?.toLowerCase().includes(searchLower) ||
+        inv.amount?.toString().includes(searchLower)
+      );
+    });
 
   const openPackingModal = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
@@ -421,7 +445,7 @@ export default function AdminLogisticInPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white p-6">
+    <div className="min-h-screen bg-black text-white p-6 relative">
       <div className="max-w-7xl mx-auto">
         <PageHeader title="Admin Logistic-In" subtitle="Packing & Verification" />
 
@@ -471,6 +495,17 @@ export default function AdminLogisticInPage() {
                 <div className="text-sm text-gray-400">Total Rencana Pengiriman</div>
                 <div className="text-3xl font-bold text-green-500">{shippingPlanInvoices.length}</div>
               </div>
+            </div>
+
+            {/* Search Input for Packing Order */}
+            <div className="mb-6">
+              <input
+                type="text"
+                placeholder="Cari berdasarkan no. invoice, nama outlet, atau NIO..."
+                value={packingOrderSearch}
+                onChange={(e) => setPackingOrderSearch(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
             </div>
 
             {error && (
@@ -715,6 +750,17 @@ export default function AdminLogisticInPage() {
                 <div className="text-sm text-gray-400">Total Rencana Pengiriman</div>
                 <div className="text-3xl font-bold text-green-500">{shippingPlanInvoices.length}</div>
               </div>
+            </div>
+
+            {/* Search Input for Shipping Plan */}
+            <div className="mb-6">
+              <input
+                type="text"
+                placeholder="Cari berdasarkan no. invoice, nama outlet, atau NIO..."
+                value={shippingPlanSearch}
+                onChange={(e) => setShippingPlanSearch(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
             </div>
 
             {error && (

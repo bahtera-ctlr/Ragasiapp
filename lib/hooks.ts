@@ -33,18 +33,43 @@ export function useAuth() {
         setUser(session.user);
         console.log('useAuth: User set:', session.user.email);
 
-        // Get user profile
+        // Cek cache di sessionStorage dulu (non-blocking optimization)
+        const cachedProfile = sessionStorage.getItem(`profile_${session.user.id}`);
+        if (cachedProfile) {
+          try {
+            const parsed = JSON.parse(cachedProfile);
+            console.log('useAuth: Using cached profile:', parsed.role);
+            setUserProfile(parsed as UserProfile);
+            setLoading(false);
+            return; // Skip database query jika cache ada
+          } catch (e) {
+            console.warn('useAuth: Invalid cache, fetching from DB');
+          }
+        }
+
+        // Jika tidak ada cache, fetch dari database
         const { data: profile, error: profileError } = await supabase
           .from('users')
           .select('*')
           .eq('id', session.user.id)
-          .single();
+          .maybeSingle(); // Gunakan maybeSingle agar tidak error jika tidak ada
 
         if (profileError) {
           console.error('useAuth: Error getting profile:', profileError);
-        } else {
-          console.log('useAuth: Profile loaded:', profile?.role);
+        } else if (profile) {
+          console.log('useAuth: Profile loaded:', profile.role);
           setUserProfile(profile as UserProfile);
+          // Cache untuk kali berikutnya
+          sessionStorage.setItem(`profile_${session.user.id}`, JSON.stringify(profile));
+        } else {
+          console.warn('useAuth: Profile not found, using default');
+          // Default profile jika tidak ada
+          const defaultProfile: UserProfile = {
+            id: session.user.id,
+            role: 'admin_keuangan',
+          };
+          setUserProfile(defaultProfile);
+          sessionStorage.setItem(`profile_${session.user.id}`, JSON.stringify(defaultProfile));
         }
 
         setLoading(false);
@@ -62,16 +87,30 @@ export function useAuth() {
       
       if (session?.user) {
         setUser(session.user);
-        // Fetch profile when auth state changes
+        
+        // Cek cache dulu
+        const cachedProfile = sessionStorage.getItem(`profile_${session.user.id}`);
+        if (cachedProfile) {
+          try {
+            const parsed = JSON.parse(cachedProfile);
+            setUserProfile(parsed as UserProfile);
+            return;
+          } catch (e) {
+            console.warn('useAuth: Invalid cache on auth change');
+          }
+        }
+        
+        // Fetch profile jika tidak ada cache
         supabase
           .from('users')
           .select('*')
           .eq('id', session.user.id)
-          .single()
+          .maybeSingle()
           .then(({ data }) => {
             if (data) {
               console.log('useAuth: Profile synced:', data.role);
               setUserProfile(data as UserProfile);
+              sessionStorage.setItem(`profile_${session.user.id}`, JSON.stringify(data));
             }
           });
       } else {
