@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-type ExportRow = {
+export type ExportRow = {
   [key: string]: string | number | null | undefined;
 };
 

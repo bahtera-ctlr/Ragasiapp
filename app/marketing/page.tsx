@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 import { logOut } from '@/lib/auth';
 import { getInvoicesByMarketing, updateInvoice, getPendingInvoicesByMarketing } from '@/lib/orders';
+import { getOutlets } from '@/lib/export';
+import type { ExportRow } from '@/lib/export';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
 import { getFakturImages, FakturImage } from '@/lib/faktur-images';
+import { createDiscountRequest, getDiscountRequests, type DiscountRequest } from '@/lib/discount-requests';
 
 type MarketingInvoice = {
   id: string;
@@ -38,12 +42,21 @@ type MarketingInvoice = {
   delivery_date?: string;
 };
 
+type Product = {
+  id: string;
+  nama_barang: string;
+  harga_jual_ragasi?: number;
+  stok?: number;
+  golongan_barang?: string;
+  komposisi?: string;
+};
+
 export default function MarketingDashboard() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const { hasAccess } = useRoleCheck(['marketing', 'super_admin']);
 
-  const [tab, setTab] = useState<'sales' | 'invoices'>('sales');
+  const [tab, setTab] = useState<'sales' | 'invoices' | 'pengajuan-diskon' | 'pengajuan-limit' | 'data-outlet' | 'historis-pengambilan'>('sales');
   const [pendingInvoices, setPendingInvoices] = useState<MarketingInvoice[]>([]);
   const [invoices, setInvoices] = useState<MarketingInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -70,6 +83,40 @@ export default function MarketingDashboard() {
 
   // Date filter state for invoices
   const [dateFilter, setDateFilter] = useState<'today' | '1week' | '1month' | '1q' | 'all'>('all');
+
+  // New Features - Modal states
+  const [showDiscountRequestModal, setShowDiscountRequestModal] = useState(false);
+  const [showLimitRequestModal, setShowLimitRequestModal] = useState(false);
+  const [showOutletDataModal, setShowOutletDataModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+
+  // New Features - Form states
+  const [discountReason, setDiscountReason] = useState('');
+  const [discountPercentage, setDiscountPercentage] = useState('');
+  const [limitAmount, setLimitAmount] = useState('');
+  const [limitReason, setLimitReason] = useState('');
+
+  // Data Outlet states
+  const [outlets, setOutlets] = useState<ExportRow[]>([]);
+  const [outletSearchQuery, setOutletSearchQuery] = useState('');
+  const [loadingOutlets, setLoadingOutlets] = useState(false);
+
+  // Pengajuan Diskon - Dropdown states
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [selectedOutletDiscount, setSelectedOutletDiscount] = useState<string>('');
+  const [selectedProductDiscount, setSelectedProductDiscount] = useState<string>('');
+  const [outletSearchDiscount, setOutletSearchDiscount] = useState('');
+  const [productSearchDiscount, setProductSearchDiscount] = useState('');
+  const [showOutletDropdown, setShowOutletDropdown] = useState(false);
+  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [startDateDiscount, setStartDateDiscount] = useState('');
+  const [endDateDiscount, setEndDateDiscount] = useState('');
+  const [submittingDiscount, setSubmittingDiscount] = useState(false);
+
+  // Pengajuan Diskon - List states
+  const [discountRequests, setDiscountRequests] = useState<DiscountRequest[]>([]);
+  const [loadingDiscountRequests, setLoadingDiscountRequests] = useState(false);
 
   // Helper function to get date range based on filter
   const getDateRange = (filter: 'today' | '1week' | '1month' | '1q' | 'all'): { start: Date; end: Date } => {
@@ -149,10 +196,96 @@ export default function MarketingDashboard() {
     }
   }, [tab, user]);
 
+  const fetchOutletData = useCallback(async () => {
+    setLoadingOutlets(true);
+    try {
+      const result = await getOutlets();
+      if (result.error) {
+        console.error('Error fetching outlets:', result.error);
+        setOutlets([]);
+      } else {
+        setOutlets(result.data || []);
+      }
+    } finally {
+      setLoadingOutlets(false);
+    }
+  }, []);
+
+  const fetchProducts = useCallback(async () => {
+    setLoadingProducts(true);
+    try {
+      let allProducts: Product[] = [];
+      let from = 0;
+      const batchSize = 1000;
+      let done = false;
+
+      while (!done) {
+        const { data, error } = await supabase
+          .from('products')
+          .select('id, nama_barang, harga_jual_ragasi, stok, golongan_barang, komposisi')
+          .order('nama_barang', { ascending: true })
+          .range(from, from + batchSize - 1);
+
+        if (error) {
+          console.error('Error fetching products:', error);
+          done = true;
+        } else if (data && data.length > 0) {
+          allProducts = [...allProducts, ...(data as Product[])];
+          from += batchSize;
+        } else {
+          done = true;
+        }
+      }
+
+      setProducts(allProducts);
+    } catch (error) {
+      console.error('Error in fetchProducts:', error);
+      setProducts([]);
+    } finally {
+      setLoadingProducts(false);
+    }
+  }, []);
+
+  const fetchDiscountRequests = useCallback(async () => {
+    setLoadingDiscountRequests(true);
+    try {
+      const result = await getDiscountRequests();
+      if (result.error) {
+        console.error('Error fetching discount requests:', result.error);
+        setDiscountRequests([]);
+      } else {
+        setDiscountRequests(result.data || []);
+      }
+    } catch (error) {
+      console.error('Error in fetchDiscountRequests:', error);
+      setDiscountRequests([]);
+    } finally {
+      setLoadingDiscountRequests(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (loading || !hasAccess || !user) return;
-    fetchOrders();
-  }, [loading, hasAccess, user, fetchOrders]);
+    
+    // Fetch outlets ketika tab adalah data-outlet
+    if (tab === 'data-outlet') {
+      fetchOutletData();
+    } else if (tab === 'pengajuan-diskon') {
+      fetchDiscountRequests();
+    } else {
+      fetchOrders();
+    }
+
+    // Fetch products ketika discount modal dibuka
+    if (showDiscountRequestModal && products.length === 0) {
+      fetchProducts();
+    }
+
+    // Fetch outlets ketika discount modal dibuka (jika belum ada)
+    if (showDiscountRequestModal && outlets.length === 0) {
+      fetchOutletData();
+    }
+  }, [loading, hasAccess, user, tab, showDiscountRequestModal]);
 
   // Show loading while auth is checking
   if (loading) {
@@ -334,6 +467,68 @@ Terima kasih!
     window.open(whatsappUrl, '_blank');
   };
 
+  const handleSubmitDiscountRequest = async () => {
+    // Validation
+    if (!selectedOutletDiscount) {
+      alert('Pilih outlet terlebih dahulu');
+      return;
+    }
+    if (!selectedProductDiscount) {
+      alert('Pilih barang terlebih dahulu');
+      return;
+    }
+    if (!discountPercentage || parseFloat(discountPercentage) <= 0) {
+      alert('Persentase diskon harus lebih dari 0');
+      return;
+    }
+    if (!discountReason.trim()) {
+      alert('Alasan diskon harus diisi');
+      return;
+    }
+    if (!startDateDiscount || !endDateDiscount) {
+      alert('Periode berlaku harus diisi');
+      return;
+    }
+    if (new Date(startDateDiscount) >= new Date(endDateDiscount)) {
+      alert('Tanggal mulai harus sebelum tanggal akhir');
+      return;
+    }
+
+    setSubmittingDiscount(true);
+    try {
+      const result = await createDiscountRequest(
+        selectedOutletDiscount,
+        selectedProductDiscount,
+        parseFloat(discountPercentage),
+        discountReason,
+        startDateDiscount,
+        endDateDiscount
+      );
+
+      if (result.error) {
+        alert(`Gagal mengajukan diskon: ${result.error}`);
+      } else {
+        alert('Pengajuan diskon berhasil dibuat! Menunggu persetujuan admin.');
+        // Reset form
+        setShowDiscountRequestModal(false);
+        setSelectedOutletDiscount('');
+        setSelectedProductDiscount('');
+        setOutletSearchDiscount('');
+        setProductSearchDiscount('');
+        setDiscountPercentage('');
+        setDiscountReason('');
+        setStartDateDiscount('');
+        setEndDateDiscount('');
+        // Refresh the discount requests list
+        fetchDiscountRequests();
+      }
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setSubmittingDiscount(false);
+    }
+  };
+
   if (loading || !hasAccess) return <LoadingSpinner />;
 
   return (
@@ -359,7 +554,7 @@ Terima kasih!
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Tabs */}
-        <div className="flex gap-4 mb-8">
+        <div className="flex gap-2 mb-8 flex-wrap">
           <button
             onClick={() => setTab('sales')}
             className={`py-2 px-4 rounded-lg font-medium transition-colors ${
@@ -380,6 +575,50 @@ Terima kasih!
           >
             Invoices (Released)
           </button>
+          <button
+            onClick={() => setTab('pengajuan-diskon')}
+            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
+              tab === 'pengajuan-diskon'
+                ? 'bg-purple-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            💰 Pengajuan Diskon
+          </button>
+          <button
+            onClick={() => setTab('pengajuan-limit')}
+            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
+              tab === 'pengajuan-limit'
+                ? 'bg-purple-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            📊 Pengajuan Limit
+          </button>
+          <button
+            onClick={() => setTab('data-outlet')}
+            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
+              tab === 'data-outlet'
+                ? 'bg-purple-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            🏪 Data Outlet
+          </button>
+          <button
+            onClick={() => setTab('historis-pengambilan')}
+            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
+              tab === 'historis-pengambilan'
+                ? 'bg-purple-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            📈 Historis Pengambilan
+          </button>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-2 mb-8 flex-wrap">
           <button
             onClick={() => router.push('/sales')}
             className="py-2 px-4 rounded-lg font-medium bg-green-600 hover:bg-green-700 text-white transition-colors"
@@ -720,7 +959,448 @@ Terima kasih!
             )}
           </div>
         )}
+
+        {/* Pengajuan Diskon Tab */}
+        {tab === 'pengajuan-diskon' && (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-white">Pengajuan Diskon</h2>
+                <p className="text-gray-400">Ajukan diskon untuk outlet tertentu</p>
+              </div>
+              <button
+                onClick={() => setShowDiscountRequestModal(true)}
+                className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+              >
+                + Ajukan Diskon Baru
+              </button>
+            </div>
+
+            {loadingDiscountRequests ? (
+              <div className="flex justify-center items-center py-12">
+                <div className="text-gray-400">Loading...</div>
+              </div>
+            ) : discountRequests.length === 0 ? (
+              <div className="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
+                <div className="text-5xl mb-4">💰</div>
+                <h3 className="text-xl font-semibold text-white mb-2">Belum ada pengajuan diskon</h3>
+                <p className="text-gray-400 mb-6">Klik tombol "Ajukan Diskon Baru" untuk membuat pengajuan diskon</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {discountRequests.map((request) => (
+                  <div key={request.id} className="bg-gray-900 border border-gray-800 rounded-lg p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-white mb-2">
+                          {request.product?.nama_barang || 'Produk'} - {request.outlet?.name || 'Outlet'}
+                        </h3>
+                        <p className="text-gray-400 text-sm mb-1">
+                          Diskon: <span className="text-yellow-400 font-semibold">{request.discount_percentage}%</span>
+                        </p>
+                        <p className="text-gray-400 text-sm mb-1">
+                          Periode: {new Date(request.start_date).toLocaleDateString('id-ID')} - {new Date(request.end_date).toLocaleDateString('id-ID')}
+                        </p>
+                        <p className="text-gray-400 text-sm mb-2">
+                          Alasan: {request.reason}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className={`px-3 py-1 rounded-full text-sm font-semibold whitespace-nowrap ${
+                          request.status === 'approved'
+                            ? 'bg-green-900 text-green-200'
+                            : request.status === 'rejected'
+                            ? 'bg-red-900 text-red-200'
+                            : 'bg-yellow-900 text-yellow-200'
+                        }`}>
+                          {request.status === 'approved' ? '✓ Disetujui' : request.status === 'rejected' ? '✗ Ditolak' : '⏳ Menunggu'}
+                        </span>
+                        <p className="text-gray-500 text-xs">
+                          {new Date(request.created_at).toLocaleDateString('id-ID')}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {request.status !== 'pending' && request.approval_notes && (
+                      <div className="mt-4 pt-4 border-t border-gray-800">
+                        <p className="text-gray-400 text-sm mb-1">
+                          {request.status === 'approved' ? 'Catatan Persetujuan:' : 'Alasan Penolakan:'}
+                        </p>
+                        <p className="text-gray-300 text-sm bg-gray-800 rounded px-3 py-2">
+                          {request.approval_notes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Pengajuan Limit Tab */}
+        {tab === 'pengajuan-limit' && (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-white">Pengajuan Limit</h2>
+                <p className="text-gray-400">Ajukan peningkatan limit kredit untuk outlet</p>
+              </div>
+              <button
+                onClick={() => setShowLimitRequestModal(true)}
+                className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+              >
+                + Ajukan Limit Baru
+              </button>
+            </div>
+
+            {/* Placeholder - Empty State */}
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
+              <div className="text-5xl mb-4">📊</div>
+              <h3 className="text-xl font-semibold text-white mb-2">Belum ada pengajuan limit</h3>
+              <p className="text-gray-400 mb-6">Klik tombol "Ajukan Limit Baru" untuk membuat pengajuan limit</p>
+            </div>
+          </div>
+        )}
+
+        {/* Data Outlet Tab */}
+        {tab === 'data-outlet' && (
+          <div>
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-white mb-2">Data Outlet</h2>
+              <p className="text-gray-400">Total: {outlets.length} outlet terdaftar</p>
+            </div>
+
+            {/* Search */}
+            <div className="mb-6">
+              <input
+                type="text"
+                placeholder="🔍 Cari berdasarkan NIO, Nama Outlet, Cluster, atau ME..."
+                value={outletSearchQuery}
+                onChange={(e) => setOutletSearchQuery(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+
+            {/* Loading State */}
+            {loadingOutlets ? (
+              <div className="text-center py-12">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                <p className="text-gray-400 mt-4">Loading data outlet...</p>
+              </div>
+            ) : outlets.length === 0 ? (
+              <div className="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
+                <div className="text-5xl mb-4">🏪</div>
+                <h3 className="text-xl font-semibold text-white mb-2">Tidak ada outlet</h3>
+                <p className="text-gray-400">Silakan tambahkan outlet di halaman Admin Keuangan terlebih dahulu</p>
+              </div>
+            ) : (
+              <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gray-800 border-b border-gray-700">
+                        <th className="px-6 py-3 text-left text-sm font-medium">NIO</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Nama</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Cluster</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Tempo</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">DUE</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Credit Limit</th>
+                        <th className="px-6 py-3 text-left text-sm font-medium">Saldo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {outlets
+                        .filter((outlet) => {
+                          const searchLower = outletSearchQuery.toLowerCase();
+                          const name = (outlet.name || '').toString().toLowerCase();
+                          const nio = (outlet.nio || '').toString().toLowerCase();
+                          const cluster = (outlet.cluster || '').toString().toLowerCase();
+                          const me = (outlet.me || '').toString().toLowerCase();
+                          return name.includes(searchLower) || nio.includes(searchLower) || cluster.includes(searchLower) || me.includes(searchLower);
+                        })
+                        .map((outlet, idx) => (
+                          <tr key={idx} className="border-b border-gray-700 hover:bg-gray-800">
+                            <td className="px-6 py-4 text-sm font-mono">{outlet.nio ? String(outlet.nio) : '-'}</td>
+                            <td className="px-6 py-4 text-sm">{outlet.name ? String(outlet.name) : '-'}</td>
+                            <td className="px-6 py-4 text-sm">{outlet.cluster ? String(outlet.cluster) : '-'}</td>
+                            <td className="px-6 py-4 text-sm">{outlet.top_hari ? String(outlet.top_hari) : '-'} hari</td>
+                            <td className="px-6 py-4 text-sm">{outlet.due != null ? `${String(outlet.due)} hari` : '-'}</td>
+                            <td className="px-6 py-4 text-sm">Rp {Number(outlet.limit_rupiah || 0).toLocaleString('id-ID') || '-'}</td>
+                            <td className="px-6 py-4 text-sm">Rp {Number(outlet.current_saldo || 0).toLocaleString('id-ID') || '-'}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Historis Pengambilan Tab */}
+        {tab === 'historis-pengambilan' && (
+          <div>
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-white mb-2">Historis Pengambilan</h2>
+              <p className="text-gray-400">Riwayat pengambilan barang oleh outlet</p>
+            </div>
+
+            {/* Filter */}
+            <div className="mb-6 flex gap-3 flex-wrap">
+              <select className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                <option>Semua Outlet</option>
+              </select>
+              <select className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                <option>Semua Periode</option>
+                <option>Bulan ini</option>
+                <option>3 bulan terakhir</option>
+                <option>6 bulan terakhir</option>
+              </select>
+              <input
+                type="date"
+                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            {/* Placeholder - Empty State */}
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
+              <div className="text-5xl mb-4">📈</div>
+              <h3 className="text-xl font-semibold text-white mb-2">Data historis pengambilan kosong</h3>
+              <p className="text-gray-400">Riwayat pengambilan barang akan ditampilkan di sini setelah ada transaksi</p>
+            </div>
+          </div>
+        )}
       </main>
+
+      {/* Pengajuan Diskon Modal */}
+      {showDiscountRequestModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold mb-6 text-white">Ajukan Diskon</h2>
+            
+            <div className="space-y-4 mb-6">
+              {/* Outlet Dropdown */}
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Pilih Outlet *</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Cari outlet..."
+                    value={outletSearchDiscount}
+                    onChange={(e) => setOutletSearchDiscount(e.target.value)}
+                    onFocus={() => setShowOutletDropdown(true)}
+                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600"
+                  />
+                  {showOutletDropdown && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded max-h-40 overflow-y-auto z-10">
+                      {outlets
+                        .filter((outlet) => {
+                          const search = outletSearchDiscount.toLowerCase();
+                          return (
+                            (outlet.name || '').toString().toLowerCase().includes(search) ||
+                            (outlet.nio || '').toString().toLowerCase().includes(search)
+                          );
+                        })
+                        .map((outlet, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => {
+                              setSelectedOutletDiscount(String(outlet.id || outlet.nio || ''));
+                              setOutletSearchDiscount(`${outlet.nio} - ${outlet.name}`);
+                              setShowOutletDropdown(false);
+                            }}
+                            className="px-3 py-2 hover:bg-gray-700 cursor-pointer text-white text-sm"
+                          >
+                            {outlet.nio} - {outlet.name}
+                          </div>
+                        ))}
+                      {outlets.filter((o) => (o.name || '').toString().toLowerCase().includes(outletSearchDiscount.toLowerCase())).length === 0 && (
+                        <div className="px-3 py-2 text-gray-400 text-sm">Tidak ada outlet ditemukan</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Product Dropdown */}
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Nama Barang *</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Cari barang..."
+                    value={productSearchDiscount}
+                    onChange={(e) => setProductSearchDiscount(e.target.value)}
+                    onFocus={() => setShowProductDropdown(true)}
+                    disabled={loadingProducts}
+                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 disabled:opacity-50"
+                  />
+                  {showProductDropdown && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded max-h-40 overflow-y-auto z-10">
+                      {loadingProducts ? (
+                        <div className="px-3 py-2 text-gray-400 text-sm">Loading...</div>
+                      ) : products
+                        .filter((product) => {
+                          const search = productSearchDiscount.toLowerCase();
+                          return (product.nama_barang || '').toLowerCase().includes(search);
+                        })
+                        .map((product, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => {
+                              setSelectedProductDiscount(product.id);
+                              setProductSearchDiscount(product.nama_barang);
+                              setShowProductDropdown(false);
+                            }}
+                            className="px-3 py-2 hover:bg-gray-700 cursor-pointer text-white text-sm"
+                          >
+                            {product.nama_barang}
+                          </div>
+                        ))}
+                      {!loadingProducts && products.filter((p) => p.nama_barang.toLowerCase().includes(productSearchDiscount.toLowerCase())).length === 0 && (
+                        <div className="px-3 py-2 text-gray-400 text-sm">Tidak ada barang ditemukan</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Persentase Diskon (%) *</label>
+                <input
+                  type="number"
+                  placeholder="Contoh: 5, 10, 15"
+                  value={discountPercentage}
+                  onChange={(e) => setDiscountPercentage(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Alasan Diskon *</label>
+                <textarea
+                  placeholder="Jelaskan alasan pengajuan diskon..."
+                  value={discountReason}
+                  onChange={(e) => setDiscountReason(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 resize-none"
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Periode Berlaku *</label>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={startDateDiscount}
+                    onChange={(e) => setStartDateDiscount(e.target.value)}
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-600"
+                  />
+                  <input
+                    type="date"
+                    value={endDateDiscount}
+                    onChange={(e) => setEndDateDiscount(e.target.value)}
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDiscountRequestModal(false);
+                  setSelectedOutletDiscount('');
+                  setSelectedProductDiscount('');
+                  setOutletSearchDiscount('');
+                  setProductSearchDiscount('');
+                  setDiscountPercentage('');
+                  setDiscountReason('');
+                  setStartDateDiscount('');
+                  setEndDateDiscount('');
+                }}
+                disabled={submittingDiscount}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleSubmitDiscountRequest}
+                disabled={submittingDiscount}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {submittingDiscount ? 'Sedang Mengajukan...' : 'Ajukan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pengajuan Limit Modal */}
+      {showLimitRequestModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-6 text-white">Ajukan Peningkatan Limit</h2>
+            
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Pilih Outlet *</label>
+                <select className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-600">
+                  <option>-- Pilih Outlet --</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Limit Saat Ini</label>
+                <input
+                  type="text"
+                  disabled
+                  placeholder="Rp 0"
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 opacity-50 cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Limit Baru yang Diajukan *</label>
+                <input
+                  type="number"
+                  placeholder="Masukkan nominal limit baru"
+                  value={limitAmount}
+                  onChange={(e) => setLimitAmount(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Alasan Pengajuan *</label>
+                <textarea
+                  placeholder="Jelaskan alasan peningkatan limit..."
+                  value={limitReason}
+                  onChange={(e) => setLimitReason(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 resize-none"
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLimitRequestModal(false)}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => setShowLimitRequestModal(false)}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+              >
+                Ajukan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Invoice Modal */}
       {showEditModal && editingInvoice && (

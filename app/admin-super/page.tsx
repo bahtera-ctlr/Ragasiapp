@@ -16,6 +16,7 @@ import {
 } from './actions';
 import { UserRole } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+import { getAllDiscountRequests, approveDiscountRequest, rejectDiscountRequest, type DiscountRequest } from '@/lib/discount-requests';
 
 type SalesStats = {
   totalOrders: number;
@@ -80,7 +81,7 @@ export default function AdminSuperDashboard() {
   const { hasAccess, loading: roleCheckLoading } = useRoleCheck(['super_admin']);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'pengajuan-diskon'>('dashboard');
 
   // Sales Dashboard states
   const [salesStats, setSalesStats] = useState<SalesStats | null>(null);
@@ -122,6 +123,15 @@ export default function AdminSuperDashboard() {
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
 
+  // Pengajuan Diskon states
+  const [discountRequests, setDiscountRequests] = useState<DiscountRequest[]>([]);
+  const [loadingDiscountRequests, setLoadingDiscountRequests] = useState(false);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [selectedDiscountRequest, setSelectedDiscountRequest] = useState<DiscountRequest | null>(null);
+  const [approvalNotes, setApprovalNotes] = useState('');
+  const [approvalAction, setApprovalAction] = useState<'approve' | 'reject' | null>(null);
+
   // Redirect if not super admin
   useEffect(() => {
     if (!roleCheckLoading && !hasAccess) {
@@ -140,6 +150,13 @@ export default function AdminSuperDashboard() {
   useEffect(() => {
     if (user && activeTab === 'users') {
       fetchUsers();
+    }
+  }, [user, activeTab]);
+
+  // Fetch discount requests on mount
+  useEffect(() => {
+    if (user && activeTab === 'pengajuan-diskon') {
+      fetchDiscountRequests();
     }
   }, [user, activeTab]);
 
@@ -222,6 +239,75 @@ export default function AdminSuperDashboard() {
       setLoadingUsers(false);
     }
   }, []);
+
+  const fetchDiscountRequests = useCallback(async () => {
+    try {
+      setLoadingDiscountRequests(true);
+      const result = await getAllDiscountRequests();
+      if (result.error) {
+        console.error('Error fetching discount requests:', result.error);
+        setDiscountRequests([]);
+      } else {
+        setDiscountRequests(result.data || []);
+      }
+    } catch (error) {
+      console.error('Error in fetchDiscountRequests:', error);
+      setDiscountRequests([]);
+    } finally {
+      setLoadingDiscountRequests(false);
+    }
+  }, []);
+
+  const handleApproveDiscountRequest = async () => {
+    if (!selectedDiscountRequest) return;
+
+    setProcessingRequestId(selectedDiscountRequest.id);
+    try {
+      const result = await approveDiscountRequest(selectedDiscountRequest.id, approvalNotes);
+      if (result.error) {
+        alert(`Gagal menyetujui pengajuan: ${result.error}`);
+      } else {
+        alert('Pengajuan diskon berhasil disetujui!');
+        setShowApprovalModal(false);
+        setSelectedDiscountRequest(null);
+        setApprovalNotes('');
+        setApprovalAction(null);
+        fetchDiscountRequests(); // Refresh the list
+      }
+    } catch (error) {
+      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
+  const handleRejectDiscountRequest = async () => {
+    if (!selectedDiscountRequest) return;
+
+    if (!approvalNotes.trim()) {
+      alert('Alasan penolakan harus diisi');
+      return;
+    }
+
+    setProcessingRequestId(selectedDiscountRequest.id);
+    try {
+      const result = await rejectDiscountRequest(selectedDiscountRequest.id, approvalNotes);
+      if (result.error) {
+        alert(`Gagal menolak pengajuan: ${result.error}`);
+      } else {
+        alert('Pengajuan diskon berhasil ditolak!');
+        setShowApprovalModal(false);
+        setSelectedDiscountRequest(null);
+        setApprovalNotes('');
+        setApprovalAction(null);
+        fetchDiscountRequests(); // Refresh the list
+      }
+    } catch (error) {
+      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
 
   const handleCreateUser = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -409,6 +495,16 @@ export default function AdminSuperDashboard() {
             }`}
           >
             👥 Manajemen User
+          </button>
+          <button
+            onClick={() => setActiveTab('pengajuan-diskon')}
+            className={`py-4 px-6 font-medium border-b-2 transition ${
+              activeTab === 'pengajuan-diskon'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            💰 Pengajuan Diskon
           </button>
         </div>
       </div>
@@ -791,7 +887,183 @@ export default function AdminSuperDashboard() {
             </div>
           </div>
         )}
+
+        {/* PENGAJUAN DISKON TAB */}
+        {activeTab === 'pengajuan-diskon' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold text-white mb-2">💰 Pengajuan Diskon</h2>
+              <p className="text-gray-400">Kelola pengajuan diskon dari marketing</p>
+            </div>
+
+            {loadingDiscountRequests ? (
+              <div className="flex justify-center py-12">
+                <LoadingSpinner />
+              </div>
+            ) : discountRequests.length === 0 ? (
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-12 text-center">
+                <div className="text-5xl mb-4">📋</div>
+                <h3 className="text-xl font-semibold text-white mb-2">Belum ada pengajuan diskon</h3>
+                <p className="text-gray-400">Pengajuan diskon dari marketing akan ditampilkan di sini</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {discountRequests.map((request) => (
+                  <div key={request.id} className="bg-gray-800 rounded-lg border border-gray-700 p-6 hover:border-gray-600 transition">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-3">
+                          <h3 className="text-lg font-semibold text-white">
+                            {request.product?.nama_barang || 'Produk'}
+                          </h3>
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                            request.status === 'approved'
+                              ? 'bg-green-900 text-green-200'
+                              : request.status === 'rejected'
+                              ? 'bg-red-900 text-red-200'
+                              : 'bg-yellow-900 text-yellow-200'
+                          }`}>
+                            {request.status === 'approved' ? '✓ Disetujui' : request.status === 'rejected' ? '✗ Ditolak' : '⏳ Pending'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mb-3">
+                          <div>
+                            <p className="text-gray-400">Outlet</p>
+                            <p className="text-white font-medium">{request.outlet?.name}</p>
+                            <p className="text-gray-500 text-xs">NIO: {request.outlet?.nio}</p>
+                          </div>
+
+                          <div>
+                            <p className="text-gray-400">Diskon & Periode</p>
+                            <p className="text-white font-medium">{request.discount_percentage}% diskon</p>
+                            <p className="text-gray-500 text-xs">
+                              {new Date(request.start_date).toLocaleDateString('id-ID')} - {new Date(request.end_date).toLocaleDateString('id-ID')}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-gray-400">Diajukan oleh</p>
+                            <p className="text-white font-medium">{request.marketing_user?.name}</p>
+                            <p className="text-gray-500 text-xs">{request.marketing_user?.email}</p>
+                          </div>
+
+                          <div>
+                            <p className="text-gray-400">Alasan</p>
+                            <p className="text-white font-medium">{request.reason}</p>
+                          </div>
+                        </div>
+
+                        {request.status !== 'pending' && request.approval_notes && (
+                          <div className="mt-3 pt-3 border-t border-gray-700">
+                            <p className="text-gray-400 text-sm mb-1">
+                              {request.status === 'approved' ? 'Catatan Persetujuan:' : 'Alasan Penolakan:'}
+                            </p>
+                            <p className="text-gray-300 text-sm bg-gray-700/50 rounded px-3 py-2">
+                              {request.approval_notes}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {request.status === 'pending' && (
+                        <div className="ml-4 flex gap-2">
+                          <button
+                            onClick={() => {
+                              setSelectedDiscountRequest(request);
+                              setApprovalAction('approve');
+                              setApprovalNotes('');
+                              setShowApprovalModal(true);
+                            }}
+                            disabled={processingRequestId === request.id}
+                            className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition text-sm whitespace-nowrap"
+                          >
+                            {processingRequestId === request.id ? 'Proses...' : 'Setujui'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedDiscountRequest(request);
+                              setApprovalAction('reject');
+                              setApprovalNotes('');
+                              setShowApprovalModal(true);
+                            }}
+                            disabled={processingRequestId === request.id}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition text-sm whitespace-nowrap"
+                          >
+                            {processingRequestId === request.id ? 'Proses...' : 'Tolak'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Approval Modal for Discount Requests */}
+      {showApprovalModal && selectedDiscountRequest && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg border border-gray-700 shadow-lg max-w-md w-full p-6">
+            <h3 className="text-lg font-bold text-white mb-2">
+              {approvalAction === 'approve' ? '✓ Setujui Pengajuan Diskon' : '✗ Tolak Pengajuan Diskon'}
+            </h3>
+
+            <div className="bg-gray-700/50 rounded px-3 py-2 mb-4 text-sm">
+              <p className="text-gray-300">
+                <span className="font-medium">{selectedDiscountRequest.product?.nama_barang}</span> - <span className="font-medium">{selectedDiscountRequest.discount_percentage}%</span> untuk{' '}
+                <span className="font-medium">{selectedDiscountRequest.outlet?.name}</span>
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                {approvalAction === 'approve' ? 'Catatan Persetujuan' : 'Alasan Penolakan'} {approvalAction === 'reject' && <span className="text-red-400">*</span>}
+              </label>
+              <textarea
+                value={approvalNotes}
+                onChange={(e) => setApprovalNotes(e.target.value)}
+                placeholder={approvalAction === 'approve' ? 'Masukkan catatan persetujuan (opsional)' : 'Jelaskan alasan penolakan...'}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                rows={3}
+                disabled={processingRequestId === selectedDiscountRequest.id}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowApprovalModal(false);
+                  setSelectedDiscountRequest(null);
+                  setApprovalNotes('');
+                  setApprovalAction(null);
+                }}
+                disabled={processingRequestId === selectedDiscountRequest.id}
+                className="flex-1 px-4 py-2 border border-gray-600 bg-gray-700 rounded-lg text-gray-200 font-medium hover:bg-gray-600 disabled:bg-gray-700"
+              >
+                Batal
+              </button>
+              <button
+                onClick={approvalAction === 'approve' ? handleApproveDiscountRequest : handleRejectDiscountRequest}
+                disabled={processingRequestId === selectedDiscountRequest.id || (approvalAction === 'reject' && !approvalNotes.trim())}
+                className={`flex-1 px-4 py-2 text-white font-medium rounded-lg transition ${
+                  approvalAction === 'approve'
+                    ? 'bg-green-600 hover:bg-green-700 disabled:bg-gray-600'
+                    : 'bg-red-600 hover:bg-red-700 disabled:bg-gray-600'
+                }`}
+              >
+                {processingRequestId === selectedDiscountRequest.id
+                  ? 'Proses...'
+                  : approvalAction === 'approve'
+                  ? 'Setujui'
+                  : 'Tolak'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {showEditModal && editingUser && (
