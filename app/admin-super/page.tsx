@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
@@ -16,7 +16,8 @@ import {
 } from './actions';
 import { UserRole } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
-import { getAllDiscountRequests, approveDiscountRequest, rejectDiscountRequest, type DiscountRequest } from '@/lib/discount-requests';
+import { getAllDiscountRequests, approveDiscountRequest, rejectDiscountRequest, type DiscountRequest, getInvoiceFilterOptions, getFilteredInvoiceHistory, deleteAllInvoiceHistory, batchInsertInvoiceHistoryWithOutlets, type InvoiceHistory } from '@/lib/discount-requests';
+import { getOutlets } from '@/lib/export';
 
 type SalesStats = {
   totalOrders: number;
@@ -75,13 +76,115 @@ const ROLE_COLORS_DARK: Record<UserRole, string> = {
   super_admin: 'bg-yellow-900 text-yellow-200',
 };
 
+const MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+// bln in CSV uses YYMM format: 2602 = year 2026 month 2 (Feb)
+const blnLabel = (bln: number): string => {
+  if (bln >= 100) {
+    const month = bln % 100;
+    const yr = Math.floor(bln / 100);
+    return `${MONTH_NAMES[month] || `${month}`} '${yr}`;
+  }
+  return MONTH_NAMES[bln] || `Bln ${bln}`;
+};
+
+function SearchableSelect({
+  value, onChange, options, placeholder, icon,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder: string;
+  icon?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtered = query.trim()
+    ? options.filter(o => o.toLowerCase().includes(query.toLowerCase()))
+    : options;
+
+  return (
+    <div ref={ref} className="relative min-w-[200px]">
+      <div className="flex items-center gap-2 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg">
+        {icon && <span className="flex-shrink-0">{icon}</span>}
+        <input
+          className="bg-transparent text-white text-sm outline-none flex-1 min-w-0 placeholder-gray-400"
+          placeholder={value === 'all' ? placeholder : ''}
+          value={open ? query : (value === 'all' ? '' : value)}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => { setOpen(true); setQuery(''); }}
+        />
+        {value !== 'all' && !open && (
+          <button
+            className="text-gray-500 hover:text-gray-300 flex-shrink-0 text-xs"
+            onMouseDown={e => { e.preventDefault(); onChange('all'); }}
+          >✕</button>
+        )}
+        <span className="text-gray-500 text-xs flex-shrink-0">{open ? '▲' : '▼'}</span>
+      </div>
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded-lg z-30 max-h-64 overflow-y-auto shadow-xl">
+          <div
+            className="px-3 py-2 text-sm text-gray-400 hover:bg-gray-700 cursor-pointer border-b border-gray-700"
+            onMouseDown={() => { onChange('all'); setQuery(''); setOpen(false); }}
+          >
+            {icon} {placeholder}
+          </div>
+          {filtered.slice(0, 300).map(o => (
+            <div
+              key={o}
+              className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-700 ${value === o ? 'bg-blue-900 text-blue-200' : 'text-gray-300'}`}
+              onMouseDown={() => { onChange(o); setQuery(''); setOpen(false); }}
+            >
+              {o}
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div className="px-3 py-2 text-sm text-gray-500 italic">Tidak ditemukan</div>
+          )}
+          {filtered.length > 300 && (
+            <div className="px-3 py-2 text-xs text-gray-500">Ketik untuk mempersempit ({filtered.length} hasil)</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminSuperDashboard() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { hasAccess, loading: roleCheckLoading } = useRoleCheck(['super_admin']);
+  const [networkError, setNetworkError] = useState(false);
+
+  // Catch background auth-refresh failures (net::ERR_INTERNET_DISCONNECTED etc.)
+  useEffect(() => {
+    const handler = (e: PromiseRejectionEvent) => {
+      const msg = e.reason?.message ?? '';
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('ERR_INTERNET')) {
+        e.preventDefault(); // suppress Next.js error overlay
+        setNetworkError(true);
+      }
+    };
+    window.addEventListener('unhandledrejection', handler);
+    return () => window.removeEventListener('unhandledrejection', handler);
+  }, []);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'pengajuan-diskon'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'pengajuan-diskon' | 'historis-pengambilan'>('dashboard');
 
   // Sales Dashboard states
   const [salesStats, setSalesStats] = useState<SalesStats | null>(null);
@@ -132,6 +235,27 @@ export default function AdminSuperDashboard() {
   const [approvalNotes, setApprovalNotes] = useState('');
   const [approvalAction, setApprovalAction] = useState<'approve' | 'reject' | null>(null);
 
+  // Historis Penjualan states
+  const [filterOutlet, setFilterOutlet] = useState('all');
+  const [filterNamaBarang, setFilterNamaBarang] = useState('all');
+  const [filterPrinciple, setFilterPrinciple] = useState('all');
+  const [filterME, setFilterME] = useState('all');
+  
+  // Dropdown options for filters
+  const [outletOptions, setOutletOptions] = useState<string[]>([]);
+  const [namaBarangOptions, setNamaBarangOptions] = useState<string[]>([]);
+  const [principleOptions, setPrincipleOptions] = useState<string[]>([]);
+  const [meOptions, setMEOptions] = useState<string[]>([]);
+  
+  const [invoiceCount, setInvoiceCount] = useState<number>(-1); // -1 = not yet loaded
+  const [filteredInvoiceHistory, setFilteredInvoiceHistory] = useState<InvoiceHistory[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadingCSV, setUploadingCSV] = useState(false);
+  const [pivotViewMode, setPivotViewMode] = useState<'pivot' | 'raw'>('pivot');
+  const [loadingFilter, setLoadingFilter] = useState(false);
+  const fetchingHistoryRef = useRef(false);
+
   // Redirect if not super admin
   useEffect(() => {
     if (!roleCheckLoading && !hasAccess) {
@@ -157,6 +281,13 @@ export default function AdminSuperDashboard() {
   useEffect(() => {
     if (user && activeTab === 'pengajuan-diskon') {
       fetchDiscountRequests();
+    }
+  }, [user, activeTab]);
+
+  // Fetch historis pengambilan on mount
+  useEffect(() => {
+    if (user && activeTab === 'historis-pengambilan') {
+      fetchInvoiceHistory();
     }
   }, [user, activeTab]);
 
@@ -309,6 +440,457 @@ export default function AdminSuperDashboard() {
     }
   };
 
+  const fetchInvoiceHistory = useCallback(async () => {
+    if (fetchingHistoryRef.current) return;
+    fetchingHistoryRef.current = true;
+    try {
+      setLoadingHistory(true);
+
+      const result = await getInvoiceFilterOptions();
+
+      if (result.error) {
+        console.error('Error fetching invoice filter options:', result.error);
+        setInvoiceCount(0);
+        setFilteredInvoiceHistory([]);
+        alert(`Error fetching invoice history: ${result.error}`);
+        return;
+      }
+
+      setInvoiceCount(result.count ?? 0);
+      setOutletOptions(result.outlets ?? []);
+      setNamaBarangOptions(result.namaBarang ?? []);
+      setPrincipleOptions(result.principles ?? []);
+      setMEOptions(result.mes ?? []);
+      setFilteredInvoiceHistory([]);
+    } catch (error) {
+      console.error('Error in fetchInvoiceHistory:', error);
+      alert(`Exception in fetchInvoiceHistory: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setInvoiceCount(0);
+      setFilteredInvoiceHistory([]);
+    } finally {
+      setLoadingHistory(false);
+      fetchingHistoryRef.current = false;
+    }
+  }, []);
+
+
+  const pivotData = useMemo(() => {
+    const data = filteredInvoiceHistory;
+    if (data.length === 0) return null;
+
+    const isByOutlet = filterNamaBarang !== 'all';
+
+    // Derive period key (YYMM) from record:
+    // - bln >= 100 → already YYMM (e.g., 2602)
+    // - bln < 100 (year only, e.g., 26) + tgl → combine: year*100 + month
+    // - only tgl → use tgl
+    const getPeriod = (r: InvoiceHistory): number | null => {
+      if (typeof r.bln === 'number' && r.bln >= 100) return r.bln;
+      if (r.tgl) {
+        const d = new Date(r.tgl);
+        const yr = d.getFullYear() % 100;
+        const mo = d.getMonth() + 1;
+        return yr * 100 + mo;
+      }
+      return null;
+    };
+
+    const months = [...new Set(
+      data.map(r => getPeriod(r)).filter((b): b is number => b !== null)
+    )].sort((a, b) => a - b);
+
+    const rowTotals = new Map<string, number>();
+    const rowMonths = new Map<string, Map<number, number>>();
+
+    for (const record of data) {
+      const rowKey = isByOutlet
+        ? (record.outlet_name || (record.no_outlet ? `Outlet ${record.no_outlet}` : 'Unknown'))
+        : (record.nama_barang || 'Unknown');
+      const value = record.penjualan || 0;
+
+      rowTotals.set(rowKey, (rowTotals.get(rowKey) || 0) + value);
+
+      const period = getPeriod(record);
+      if (period !== null) {
+        if (!rowMonths.has(rowKey)) rowMonths.set(rowKey, new Map());
+        const monthMap = rowMonths.get(rowKey)!;
+        monthMap.set(period, (monthMap.get(period) || 0) + value);
+      }
+    }
+
+    const rows = [...rowTotals.entries()]
+      .map(([name, total]) => ({
+        name,
+        monthData: rowMonths.get(name) || new Map<number, number>(),
+        total,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    const colTotals = new Map<number, number>();
+    for (const m of months) {
+      colTotals.set(m, rows.reduce((s, r) => s + (r.monthData.get(m) || 0), 0));
+    }
+    const grandTotal = rows.reduce((s, r) => s + r.total, 0);
+
+    return { rows, months, colTotals, grandTotal, isByOutlet };
+  }, [filteredInvoiceHistory, filterNamaBarang]);
+
+  // Handle filter changes — fetches filtered data from DB on every change
+  const handleFilterChange = async (type: 'outlet' | 'namaBarang' | 'principle' | 'me', value: string) => {
+    let newOutlet = filterOutlet;
+    let newNamaBarang = filterNamaBarang;
+    let newPrinciple = filterPrinciple;
+    let newME = filterME;
+
+    switch (type) {
+      case 'outlet':      newOutlet = value;      setFilterOutlet(value);      break;
+      case 'namaBarang':  newNamaBarang = value;  setFilterNamaBarang(value);  break;
+      case 'principle':   newPrinciple = value;   setFilterPrinciple(value);   break;
+      case 'me':          newME = value;           setFilterME(value);          break;
+    }
+
+    // When all filters cleared, show prompt instead of loading everything
+    if (newOutlet === 'all' && newNamaBarang === 'all' && newPrinciple === 'all' && newME === 'all') {
+      setFilteredInvoiceHistory([]);
+      return;
+    }
+
+    setLoadingFilter(true);
+    try {
+      const result = await getFilteredInvoiceHistory({
+        outlet_name: newOutlet !== 'all' ? newOutlet : undefined,
+        nama_barang: newNamaBarang !== 'all' ? newNamaBarang : undefined,
+        principle: newPrinciple !== 'all' ? newPrinciple : undefined,
+        me: newME !== 'all' ? newME : undefined,
+      });
+      if (result.error) {
+        console.error('Error fetching filtered data:', result.error);
+        setFilteredInvoiceHistory([]);
+      } else {
+        setFilteredInvoiceHistory(result.data || []);
+      }
+    } catch (err) {
+      console.error('Exception in handleFilterChange:', err);
+      setFilteredInvoiceHistory([]);
+    } finally {
+      setLoadingFilter(false);
+    }
+  };
+
+  const handleDeleteAllInvoice = async () => {
+    if (!confirm('Hapus SEMUA data historis penjualan dari database? Aksi ini tidak bisa dibatalkan.')) return;
+    setLoadingHistory(true);
+    try {
+      const result = await deleteAllInvoiceHistory();
+      if (result.error) {
+        alert(`Gagal hapus data: ${result.error}`);
+      } else {
+        alert(`✅ ${result.count?.toLocaleString('id-ID') ?? 0} record berhasil dihapus.`);
+        setInvoiceCount(0);
+        setFilteredInvoiceHistory([]);
+        setOutletOptions([]);
+        setNamaBarangOptions([]);
+        setPrincipleOptions([]);
+        setMEOptions([]);
+        setFilterOutlet('all');
+        setFilterNamaBarang('all');
+        setFilterPrinciple('all');
+        setFilterME('all');
+      }
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleUploadCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.csv')) {
+      alert('Harap upload file CSV');
+      return;
+    }
+
+    setUploadingCSV(true);
+    try {
+      // Read file in chunks to handle large files (100K+ rows)
+      const chunkSize = 1024 * 1024; // 1MB chunks
+      const fileSize = file.size;
+      let offset = 0;
+      let buffer = '';
+      let delimiter = ',';
+      let headerMap: Record<string, number> = {};
+      let isFirstChunk = true;
+      let linesParsed = 0;
+      
+      console.log(`Starting CSV parse for file size: ${(fileSize / 1024 / 1024).toFixed(2)}MB`);
+
+      // Parse CSV with proper handling of quoted values
+      const parseCSVLine = (line: string, delim: string): string[] => {
+        const result: string[] = [];
+        let current = '';
+        let insideQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          const nextChar = line[i + 1];
+
+          if (char === '"') {
+            if (insideQuotes && nextChar === '"') {
+              current += '"';
+              i++;
+            } else {
+              insideQuotes = !insideQuotes;
+            }
+          } else if (char === delim && !insideQuotes) {
+            result.push(current.trim().replace(/^"|"$/g, ''));
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        result.push(current.trim().replace(/^"|"$/g, ''));
+        return result;
+      };
+
+      const parseDate = (dateStr: string | undefined): string => {
+        if (!dateStr) return new Date().toISOString().split('T')[0];
+        // YYYY-MM-DD
+        const iso = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+        if (iso) return iso[0];
+        // DD/MM/YYYY or DD-MM-YYYY
+        const dmy = dateStr.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+        if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+        return new Date().toISOString().split('T')[0];
+      };
+
+      const records: Partial<InvoiceHistory>[] = [];
+      let skippedRows = 0;
+
+      // Read and process file chunk by chunk
+      while (offset < fileSize) {
+        const blob = file.slice(offset, offset + chunkSize);
+        const text = await blob.text();
+        buffer += text;
+        offset += chunkSize;
+
+        // Process complete lines in buffer
+        const lines = buffer.split('\n');
+        
+        // Keep last incomplete line in buffer for next iteration
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) {
+            skippedRows++;
+            continue;
+          }
+
+          // Parse header on first line
+          if (isFirstChunk && linesParsed === 0) {
+            // Detect delimiter from raw line BEFORE parsing (count occurrences)
+            const rawLine = line.replace(/\r/g, '');
+            const commaCount = (rawLine.match(/,/g) || []).length;
+            const semiCount = (rawLine.match(/;/g) || []).length;
+            const tabCount = (rawLine.match(/\t/g) || []).length;
+            if (semiCount > commaCount && semiCount >= tabCount) delimiter = ';';
+            else if (tabCount > commaCount && tabCount >= semiCount) delimiter = '\t';
+            else delimiter = ',';
+
+            console.log(`Delimiter detected: '${delimiter}' (commas:${commaCount} semis:${semiCount} tabs:${tabCount})`);
+
+            const headerLine = parseCSVLine(rawLine, delimiter);
+            const headers = headerLine.map(h => h.toLowerCase().trim().replace(/^﻿/, '')); // strip BOM
+
+            console.log('Headers found:', headers);
+
+            // Exact mapping: normalize header then match to internal field name
+            // fieldAliases: all possible header names → internal field name
+            const fieldAliases: Record<string, string> = {
+              'gudang': 'gudang',
+              'no faktur': 'no_faktur', 'no_faktur': 'no_faktur', 'nofaktur': 'no_faktur', 'faktur': 'no_faktur',
+              'salesman': 'salesman',
+              'no outlet': 'no_outlet', 'no_outlet': 'no_outlet', 'nooutlet': 'no_outlet', 'nio': 'no_outlet',
+              'outlet_name': 'outlet_name', 'nama outlet': 'outlet_name', 'nama_outlet': 'outlet_name',
+              'nama barang': 'nama_barang', 'nama_barang': 'nama_barang', 'namabarang': 'nama_barang', 'nama produk': 'nama_barang', 'produk': 'nama_barang', 'item': 'nama_barang',
+              'tgl': 'tgl', 'tanggal': 'tgl', 'date': 'tgl', 'tgl faktur': 'tgl',
+              'qty': 'qty', 'quantity': 'qty', 'jumlah': 'qty',
+              'sat': 'sat', 'satuan': 'sat', 'unit': 'sat',
+              'disc': 'disc', 'diskon': 'disc', 'discount': 'disc',
+              'dpp': 'dpp', 'harga dpp': 'dpp',
+              'penjualan': 'penjualan', 'harga': 'penjualan', 'total': 'penjualan', 'amount': 'penjualan',
+              'bln': 'bln', 'bulan': 'bln', 'month': 'bln',
+              'principle': 'principle', 'principal': 'principle', 'prinsip': 'principle',
+              'komposisi': 'komposisi', 'composition': 'komposisi',
+              'me': 'me', 'marketing executive': 'me',
+              'lh/lb': 'lh_lb', 'lh_lb': 'lh_lb', 'program': 'lh_lb',
+            };
+
+            headers.forEach((h, idx) => {
+              const normalized = h.replace(/\s+/g, ' ').trim();
+              const field = fieldAliases[normalized];
+              if (field) {
+                headerMap[field] = idx;
+              }
+            });
+
+            console.log('Header mapping:', headerMap);
+            const detectedCols = Object.keys(headerMap);
+            console.log(`Mapped ${detectedCols.length} columns:`, detectedCols);
+            if (detectedCols.length < 3) {
+              console.warn('⚠️ Less than 3 columns mapped! Headers:', headers);
+            }
+            isFirstChunk = false;
+            linesParsed++;
+            continue;
+          }
+
+          // Parse data rows
+          const values = parseCSVLine(line, delimiter);
+          
+          if (values.length === 0 || !values.some(v => v)) {
+            skippedRows++;
+            continue;
+          }
+
+          const getValueByColumn = (colName: string): any => {
+            const idx = headerMap[colName];
+            return idx !== undefined && values[idx] ? values[idx].trim() : undefined;
+          };
+
+          // Parse Indonesian-format number: "1.275.000" → 1275000, "5,5" → 5.5
+          const parseNum = (raw: string | undefined): number | undefined => {
+            if (!raw) return undefined;
+            // Remove non-numeric except dot, comma, minus
+            const s = raw.trim().replace(/[^\d.,-]/g, '');
+            if (!s) return undefined;
+            // Indonesian: dots = thousand sep, comma = decimal
+            const cleaned = s.replace(/\./g, '').replace(',', '.');
+            const n = parseFloat(cleaned);
+            return isNaN(n) ? undefined : n;
+          };
+
+          const tglValue = getValueByColumn('tgl');
+          const noOutletRaw = getValueByColumn('no_outlet');
+          let noOutletParsed: number | undefined = undefined;
+          if (noOutletRaw) {
+            const parsed = parseInt(noOutletRaw);
+            if (!isNaN(parsed)) noOutletParsed = parsed;
+          }
+
+          const record: Partial<InvoiceHistory> = {
+            gudang: getValueByColumn('gudang'),
+            no_faktur: parseNum(getValueByColumn('no_faktur')) ? Math.round(parseNum(getValueByColumn('no_faktur'))!) : undefined,
+            salesman: getValueByColumn('salesman'),
+            no_outlet: noOutletParsed,
+            outlet_name: getValueByColumn('outlet_name'),
+            nama_barang: getValueByColumn('nama_barang') || '',
+            tgl: parseDate(tglValue),
+            qty: getValueByColumn('qty'),
+            sat: getValueByColumn('sat'),
+            disc: parseNum(getValueByColumn('disc')),
+            dpp: parseNum(getValueByColumn('dpp')),
+            penjualan: parseNum(getValueByColumn('penjualan')),
+            bln: (() => { const raw = getValueByColumn('bln'); if (!raw) return undefined; const n = parseInt(raw.trim().replace(/[.,\s]/g, '')); return isNaN(n) || n <= 0 ? undefined : n; })(),
+            principle: getValueByColumn('principle'),
+            komposisi: getValueByColumn('komposisi'),
+            me: getValueByColumn('me'),
+            lh_lb: getValueByColumn('lh_lb'),
+            created_at: new Date().toISOString()
+          };
+
+          records.push(record);
+          linesParsed++;
+
+          // Log first 2 records to verify parsing
+          if (linesParsed <= 2) {
+            console.log(`Row ${linesParsed} - no_outlet raw: "${noOutletRaw}", parsed: ${noOutletParsed}, nama_barang: "${record.nama_barang}"`);
+          }
+
+          // Log progress every 10,000 rows
+          if (linesParsed % 10000 === 0) {
+            console.log(`Parsed ${linesParsed} rows so far...`);
+          }
+
+          // Batch insert every 50K rows to free memory
+          if (records.length >= 50000) {
+            console.log(`Inserting batch of ${records.length} records...`);
+            const batchResult = await batchInsertInvoiceHistoryWithOutlets(records as InvoiceHistory[], 5000);
+            if (batchResult.error) {
+              console.warn(`Batch insert warning: ${batchResult.error}`);
+            } else {
+              console.log(`Batch inserted: ${batchResult.count} records`);
+            }
+            records.length = 0; // Clear array to free memory
+          }
+        }
+      }
+
+      // Process remaining data in buffer
+      if (buffer.trim()) {
+        const values = parseCSVLine(buffer, delimiter);
+        if (values.length > 0 && values.some(v => v)) {
+          const getVal = (col: string): string | undefined => {
+            const idx = headerMap[col];
+            return idx !== undefined && values[idx] ? values[idx].trim() : undefined;
+          };
+          const parseNumBuf = (raw: string | undefined): number | undefined => {
+            if (!raw) return undefined;
+            const s = raw.trim().replace(/[^\d.,-]/g, '');
+            if (!s) return undefined;
+            const n = parseFloat(s.replace(/\./g, '').replace(',', '.'));
+            return isNaN(n) ? undefined : n;
+          };
+          const tglRaw = getVal('tgl');
+          const noOutletRaw = getVal('no_outlet');
+          const noOutletParsed = noOutletRaw ? (parseInt(noOutletRaw) || undefined) : undefined;
+          records.push({
+            gudang: getVal('gudang'),
+            no_faktur: parseNumBuf(getVal('no_faktur')) ? Math.round(parseNumBuf(getVal('no_faktur'))!) : undefined,
+            salesman: getVal('salesman'),
+            no_outlet: noOutletParsed,
+            outlet_name: getVal('outlet_name'),
+            nama_barang: getVal('nama_barang') || '',
+            tgl: parseDate(tglRaw),
+            qty: getVal('qty'),
+            sat: getVal('sat'),
+            disc: parseNumBuf(getVal('disc')),
+            dpp: parseNumBuf(getVal('dpp')),
+            penjualan: parseNumBuf(getVal('penjualan')),
+            bln: (() => { const raw = getVal('bln'); if (!raw) return undefined; const n = parseInt(raw.trim().replace(/[.,\s]/g, '')); return isNaN(n) || n <= 0 ? undefined : n; })(),
+            principle: getVal('principle'),
+            komposisi: getVal('komposisi'),
+            me: getVal('me'),
+            lh_lb: getVal('lh_lb'),
+            created_at: new Date().toISOString()
+          });
+        }
+      }
+
+      // Final batch insert
+      if (records.length > 0) {
+        console.log(`Inserting final batch of ${records.length} records...`);
+        const batchResult = await batchInsertInvoiceHistoryWithOutlets(records as InvoiceHistory[], 5000);
+        if (batchResult.error) {
+          console.error('Final batch error:', batchResult.error);
+          alert(`Error pada batch akhir: ${batchResult.error}`);
+          return;
+        }
+      }
+
+      alert(`✅ Semua ${linesParsed - 1} data berhasil di-upload ke database! (${skippedRows} baris kosong dilewati)`);
+      setShowUploadModal(false);
+      fetchInvoiceHistory(); // Refresh the list
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      if (input) input.value = '';
+    } catch (err) {
+      console.error('CSV parsing error:', err);
+      alert(`Error parsing CSV: ${err instanceof Error ? err.message : 'Unknown error'}\n\nCheck browser console (F12) for details.`);
+    } finally {
+      setUploadingCSV(false);
+    }
+  };
+
   const handleCreateUser = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFormError(null);
@@ -453,6 +1035,15 @@ export default function AdminSuperDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100">
+      {/* Network error banner */}
+      {networkError && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-yellow-700 text-yellow-100 text-sm px-4 py-2 flex items-center justify-between">
+          <span>⚠️ Koneksi internet terputus. Data mungkin tidak ter-update. Refresh halaman setelah koneksi pulih.</span>
+          <button onClick={() => window.location.reload()} className="ml-4 bg-yellow-600 hover:bg-yellow-500 px-3 py-1 rounded text-xs font-medium">
+            Refresh
+          </button>
+        </div>
+      )}
       {/* Header */}
       <div className="bg-gray-800 border-b border-gray-700 shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -505,6 +1096,16 @@ export default function AdminSuperDashboard() {
             }`}
           >
             💰 Pengajuan Diskon
+          </button>
+          <button
+            onClick={() => setActiveTab('historis-pengambilan')}
+            className={`py-4 px-6 font-medium border-b-2 transition ${
+              activeTab === 'historis-pengambilan'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            � Historis Penjualan
           </button>
         </div>
       </div>
@@ -1059,6 +1660,282 @@ export default function AdminSuperDashboard() {
                   : approvalAction === 'approve'
                   ? 'Setujui'
                   : 'Tolak'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HISTORIS PENJUALAN TAB */}
+      {activeTab === 'historis-pengambilan' && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-bold text-white mb-2">📋 Historis Penjualan (Faktur)</h2>
+              <p className="text-gray-400">Riwayat penjualan dan faktur dari semua outlet</p>
+            </div>
+            <div className="flex gap-2">
+              {invoiceCount > 0 && (
+                <button
+                  onClick={handleDeleteAllInvoice}
+                  disabled={loadingHistory}
+                  className="bg-red-700 hover:bg-red-600 disabled:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm"
+                >
+                  🗑️ Hapus Semua Data
+                </button>
+              )}
+              <button
+                onClick={() => setShowUploadModal(true)}
+                className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+              >
+                📤 Upload CSV
+              </button>
+            </div>
+          </div>
+
+          {/* Filter */}
+          <div className="flex gap-3 flex-wrap">
+            <SearchableSelect
+              value={filterOutlet}
+              onChange={(v) => handleFilterChange('outlet', v)}
+              options={outletOptions}
+              placeholder="Semua Outlet"
+              icon="📦"
+            />
+            <SearchableSelect
+              value={filterNamaBarang}
+              onChange={(v) => handleFilterChange('namaBarang', v)}
+              options={namaBarangOptions}
+              placeholder="Semua Barang"
+              icon="📋"
+            />
+            <SearchableSelect
+              value={filterPrinciple}
+              onChange={(v) => handleFilterChange('principle', v)}
+              options={principleOptions}
+              placeholder="Semua Principle"
+              icon="🏢"
+            />
+            <SearchableSelect
+              value={filterME}
+              onChange={(v) => handleFilterChange('me', v)}
+              options={meOptions}
+              placeholder="Semua ME"
+              icon="👤"
+            />
+          </div>
+
+          {/* View Toggle */}
+          {!loadingHistory && !loadingFilter && filteredInvoiceHistory.length > 0 && (
+            <div className="flex gap-2 items-center">
+              <span className="text-gray-400 text-sm">Tampilan:</span>
+              <button
+                onClick={() => setPivotViewMode('pivot')}
+                className={`px-3 py-1 rounded text-sm font-medium transition ${pivotViewMode === 'pivot' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+              >
+                Pivot Table
+              </button>
+              <button
+                onClick={() => setPivotViewMode('raw')}
+                className={`px-3 py-1 rounded text-sm font-medium transition ${pivotViewMode === 'raw' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+              >
+                Data Mentah
+              </button>
+            </div>
+          )}
+
+          {/* Data Table */}
+          {loadingHistory || loadingFilter ? (
+            <div className="flex justify-center py-12">
+              <LoadingSpinner />
+            </div>
+          ) : invoiceCount === 0 ? (
+            <div className="bg-gray-800 rounded-lg border border-gray-700 p-12 text-center">
+              <div className="text-5xl mb-4">📋</div>
+              <h3 className="text-xl font-semibold text-white mb-2">Belum ada data historis penjualan</h3>
+              <p className="text-gray-400">Upload CSV untuk mulai menampilkan data penjualan</p>
+            </div>
+          ) : filterOutlet === 'all' && filterNamaBarang === 'all' && filterPrinciple === 'all' && filterME === 'all' ? (
+            <div className="bg-gray-800 rounded-lg border border-gray-700 p-12 text-center">
+              <div className="text-5xl mb-4">🔍</div>
+              <h3 className="text-xl font-semibold text-white mb-2">Pilih filter untuk melihat data pivot</h3>
+              <p className="text-gray-400">Pilih Outlet, Nama Barang, Principle, atau ME untuk memuat data dari database ({invoiceCount.toLocaleString('id-ID')}+ record tersedia)</p>
+            </div>
+          ) : filteredInvoiceHistory.length === 0 ? (
+            <div className="bg-gray-800 rounded-lg border border-gray-700 p-12 text-center">
+              <div className="text-5xl mb-4">📭</div>
+              <h3 className="text-xl font-semibold text-white mb-2">Tidak ada data untuk filter ini</h3>
+              <p className="text-gray-400">Coba ubah atau hapus filter yang dipilih</p>
+            </div>
+          ) : pivotViewMode === 'pivot' && pivotData ? (
+            <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+              <div className="text-sm text-gray-400 mb-3">
+                {pivotData.isByOutlet
+                  ? `Nama Barang: "${filterNamaBarang}" → Dikelompokkan per Outlet`
+                  : filterOutlet !== 'all'
+                  ? `Outlet: "${filterOutlet}" → Dikelompokkan per Barang`
+                  : 'Semua Barang → Dikelompokkan per Bulan'}
+                <span className="ml-3 text-gray-500">({pivotData.rows.length} baris | {filteredInvoiceHistory.length} record)</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-gray-700">
+                      <th className="px-4 py-3 text-left text-gray-200 font-semibold border border-gray-600 sticky left-0 bg-gray-700 min-w-[220px] z-10">
+                        {pivotData.isByOutlet ? 'Nama Outlet' : 'Nama Barang'}
+                      </th>
+                      {pivotData.months.map(m => (
+                        <th key={m} className="px-4 py-3 text-right text-gray-200 font-semibold border border-gray-600 whitespace-nowrap min-w-[120px]">
+                          {blnLabel(m)}
+                        </th>
+                      ))}
+                      <th className="px-4 py-3 text-right text-blue-300 font-semibold border border-gray-600 whitespace-nowrap min-w-[130px]">
+                        Grand Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pivotData.rows.map((row, idx) => (
+                      <tr key={idx} className={`hover:bg-gray-700/50 ${idx % 2 === 0 ? '' : 'bg-gray-800/50'}`}>
+                        <td className="px-4 py-2 text-gray-200 border border-gray-700 sticky left-0 bg-gray-800 font-medium z-10 text-sm">
+                          {row.name}
+                        </td>
+                        {pivotData.months.map(m => (
+                          <td key={m} className="px-4 py-2 text-right text-gray-300 border border-gray-700 tabular-nums text-sm">
+                            {row.monthData.has(m) ? row.monthData.get(m)!.toLocaleString('id-ID') : ''}
+                          </td>
+                        ))}
+                        <td className="px-4 py-2 text-right text-blue-300 font-semibold border border-gray-700 tabular-nums text-sm">
+                          {row.total.toLocaleString('id-ID')}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="bg-gray-700 font-semibold border-t-2 border-gray-500">
+                      <td className="px-4 py-3 text-gray-100 border border-gray-600 sticky left-0 bg-gray-700 z-10">
+                        Grand Total
+                      </td>
+                      {pivotData.months.map(m => (
+                        <td key={m} className="px-4 py-3 text-right text-gray-100 border border-gray-600 tabular-nums">
+                          {(pivotData.colTotals.get(m) || 0).toLocaleString('id-ID')}
+                        </td>
+                      ))}
+                      <td className="px-4 py-3 text-right text-blue-300 border border-gray-600 tabular-nums">
+                        {pivotData.grandTotal.toLocaleString('id-ID')}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-700 sticky top-0 bg-gray-900">
+                    <th className="px-4 py-3 text-left text-gray-300 font-medium">No Faktur</th>
+                    <th className="px-4 py-3 text-left text-gray-300 font-medium">Tanggal</th>
+                    <th className="px-4 py-3 text-left text-gray-300 font-medium">Bulan</th>
+                    <th className="px-4 py-3 text-left text-gray-300 font-medium">Outlet</th>
+                    <th className="px-4 py-3 text-left text-gray-300 font-medium">Nama Barang</th>
+                    <th className="px-4 py-3 text-left text-gray-300 font-medium">Qty</th>
+                    <th className="px-4 py-3 text-left text-gray-300 font-medium">Sat</th>
+                    <th className="px-4 py-3 text-right text-gray-300 font-medium">Penjualan</th>
+                    <th className="px-4 py-3 text-left text-gray-300 font-medium">Salesman</th>
+                    <th className="px-4 py-3 text-left text-gray-300 font-medium">ME</th>
+                    <th className="px-4 py-3 text-left text-gray-300 font-medium">Principle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredInvoiceHistory.map((record, idx) => (
+                    <tr key={idx} className="border-b border-gray-700 hover:bg-gray-700/50">
+                      <td className="px-4 py-3 text-gray-100 font-medium text-sm">{record.no_faktur || '-'}</td>
+                      <td className="px-4 py-3 text-gray-300 text-sm">
+                        {record.tgl ? new Date(record.tgl).toLocaleDateString('id-ID') : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-gray-300 text-sm">{record.bln ?? '-'}</td>
+                      <td className="px-4 py-3 text-gray-300 text-sm">{record.outlet_name || '-'}</td>
+                      <td className="px-4 py-3 text-gray-300 text-sm">{record.nama_barang || '-'}</td>
+                      <td className="px-4 py-3 text-gray-300 text-sm text-right">{record.qty || '-'}</td>
+                      <td className="px-4 py-3 text-gray-300 text-sm">{record.sat || '-'}</td>
+                      <td className="px-4 py-3 text-gray-300 text-sm text-right">
+                        {record.penjualan ? `Rp ${record.penjualan.toLocaleString('id-ID')}` : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-gray-400 text-sm">{record.salesman || '-'}</td>
+                      <td className="px-4 py-3 text-gray-400 text-sm">{record.me || '-'}</td>
+                      <td className="px-4 py-3 text-gray-400 text-sm">{record.principle || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="mt-4 text-gray-400 text-sm">
+                Ditampilkan: {filteredInvoiceHistory.length.toLocaleString('id-ID')} record
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Upload CSV Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg border border-gray-700 shadow-lg max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-white mb-4">📤 Upload Historis Penjualan (Faktur) CSV</h3>
+
+            <div className="mb-4">
+              <p className="text-gray-300 text-sm mb-2 font-semibold">✅ Format CSV Support:</p>
+              <div className="bg-gray-700/50 rounded p-2 text-gray-400 text-xs mb-2">
+                <div className="font-semibold text-blue-300 mb-1">Parser Support:</div>
+                <div>• Delimiter: Comma (,), Semicolon (;), atau Tab</div>
+                <div>• Quoted values: "value with, comma"</div>
+                <div>• Date format: YYYY-MM-DD atau DD/MM/YYYY</div>
+                <div>• Kolom bisa dalam urutan berbeda (auto-detect header)</div>
+              </div>
+
+              <p className="text-gray-300 text-sm mb-2 font-semibold">📋 Kolom yang didukung:</p>
+              <div className="bg-gray-700/50 rounded p-3 text-gray-400 text-xs space-y-1 max-h-48 overflow-y-auto">
+                <div className="text-yellow-300 font-semibold">WAJIB:</div>
+                <div>• <strong>nama_barang</strong> - Nama barang / SKU</div>
+                <div>• <strong>tgl</strong> - Tanggal faktur (YYYY-MM-DD atau DD/MM/YYYY)</div>
+                
+                <div className="text-blue-300 font-semibold mt-2">OPSIONAL (untuk filter):</div>
+                <div>• <strong>no_outlet</strong> - Nomor outlet (digunakan di filter)</div>
+                <div>• <strong>principle</strong> - Perusahaan farmasi (digunakan di filter)</div>
+                <div>• <strong>me</strong> - Marketing Executive (digunakan di filter)</div>
+                
+                <div className="text-green-300 font-semibold mt-2">OPSIONAL (lainnya):</div>
+                <div>• gudang, no_faktur, salesman, qty, sat, disc, dpp, penjualan, bln, komposisi, lh_lb</div>
+              </div>
+              
+              <p className="text-yellow-400 text-xs mt-2">
+                💡 Parser otomatis detect delimiter dan normalize date format!<br/>
+                🔍 Buka browser console (F12) untuk debug info jika ada masalah
+              </p>
+            </div>
+
+            <div className="mb-6 p-4 bg-gray-700 border-2 border-dashed border-gray-600 rounded-lg">
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleUploadCSV}
+                disabled={uploadingCSV}
+                className="block w-full text-sm text-gray-400
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-lg file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-blue-600 file:text-white
+                  hover:file:bg-blue-700
+                  disabled:opacity-50"
+              />
+              <p className="text-gray-500 text-xs mt-2">Max 5MB</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowUploadModal(false)}
+                disabled={uploadingCSV}
+                className="w-full px-4 py-2 border border-gray-600 bg-gray-700 rounded-lg text-gray-200 font-medium hover:bg-gray-600 disabled:bg-gray-700"
+              >
+                Batal
               </button>
             </div>
           </div>

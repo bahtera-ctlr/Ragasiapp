@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { logOut } from '@/lib/auth';
@@ -11,7 +11,7 @@ import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
 import { getFakturImages, FakturImage } from '@/lib/faktur-images';
-import { createDiscountRequest, getDiscountRequests, type DiscountRequest } from '@/lib/discount-requests';
+import { createDiscountRequest, getDiscountRequests, type DiscountRequest, getInvoiceFilterOptionsReadOnly, getFilteredInvoiceHistoryReadOnly, type InvoiceHistory } from '@/lib/discount-requests';
 
 type MarketingInvoice = {
   id: string;
@@ -50,6 +50,92 @@ type Product = {
   golongan_barang?: string;
   komposisi?: string;
 };
+
+const MONTH_NAMES_MKT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const blnLabelMkt = (bln: number): string => {
+  if (bln >= 100) {
+    const month = bln % 100;
+    const yr = Math.floor(bln / 100);
+    return `${MONTH_NAMES_MKT[month] || `${month}`} '${yr}`;
+  }
+  return MONTH_NAMES_MKT[bln] || `Bln ${bln}`;
+};
+
+function SearchableSelectMkt({
+  value, onChange, options, placeholder, icon,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder: string;
+  icon?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtered = query.trim()
+    ? options.filter(o => o.toLowerCase().includes(query.toLowerCase()))
+    : options;
+
+  return (
+    <div ref={ref} className="relative w-full">
+      <div className="flex items-center gap-2 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg">
+        {icon && <span className="flex-shrink-0">{icon}</span>}
+        <input
+          className="bg-transparent text-white text-sm outline-none flex-1 min-w-0 placeholder-gray-400"
+          placeholder={value === 'all' ? placeholder : ''}
+          value={open ? query : (value === 'all' ? '' : value)}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => { setOpen(true); setQuery(''); }}
+        />
+        {value !== 'all' && !open && (
+          <button
+            className="text-gray-500 hover:text-gray-300 flex-shrink-0 text-xs"
+            onMouseDown={e => { e.preventDefault(); onChange('all'); }}
+          >✕</button>
+        )}
+        <span className="text-gray-500 text-xs flex-shrink-0">{open ? '▲' : '▼'}</span>
+      </div>
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded-lg z-30 max-h-64 overflow-y-auto shadow-xl">
+          <div
+            className="px-3 py-2 text-sm text-gray-400 hover:bg-gray-700 cursor-pointer border-b border-gray-700"
+            onMouseDown={() => { onChange('all'); setQuery(''); setOpen(false); }}
+          >
+            {icon} {placeholder}
+          </div>
+          {filtered.slice(0, 300).map(o => (
+            <div
+              key={o}
+              className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-700 ${value === o ? 'bg-blue-900 text-blue-200' : 'text-gray-300'}`}
+              onMouseDown={() => { onChange(o); setQuery(''); setOpen(false); }}
+            >
+              {o}
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div className="px-3 py-2 text-sm text-gray-500 italic">Tidak ditemukan</div>
+          )}
+          {filtered.length > 300 && (
+            <div className="px-3 py-2 text-xs text-gray-500">Ketik untuk mempersempit ({filtered.length} hasil)</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function MarketingDashboard() {
   const router = useRouter();
@@ -117,6 +203,21 @@ export default function MarketingDashboard() {
   // Pengajuan Diskon - List states
   const [discountRequests, setDiscountRequests] = useState<DiscountRequest[]>([]);
   const [loadingDiscountRequests, setLoadingDiscountRequests] = useState(false);
+
+  // Historis Penjualan Pivot states
+  const [invoiceCount, setInvoiceCount] = useState<number>(-1);
+  const [filteredInvoiceHistory, setFilteredInvoiceHistory] = useState<InvoiceHistory[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingFilter, setLoadingFilter] = useState(false);
+  const [filterOutlet, setFilterOutlet] = useState('all');
+  const [filterNamaBarang, setFilterNamaBarang] = useState('all');
+  const [filterPrinciple, setFilterPrinciple] = useState('all');
+  const [filterME, setFilterME] = useState('all');
+  const [outletOptions, setOutletOptions] = useState<string[]>([]);
+  const [namaBarangOptions, setNamaBarangOptions] = useState<string[]>([]);
+  const [principleOptions, setPrincipleOptions] = useState<string[]>([]);
+  const [meOptions, setMEOptions] = useState<string[]>([]);
+  const fetchingHistoryRef = useRef(false);
 
   // Helper function to get date range based on filter
   const getDateRange = (filter: 'today' | '1week' | '1month' | '1q' | 'all'): { start: Date; end: Date } => {
@@ -264,14 +365,121 @@ export default function MarketingDashboard() {
     }
   }, []);
 
+  const fetchInvoiceHistory = useCallback(async () => {
+    if (fetchingHistoryRef.current) return;
+    fetchingHistoryRef.current = true;
+    try {
+      setLoadingHistory(true);
+      const result = await getInvoiceFilterOptionsReadOnly();
+      if (result.error) {
+        console.error('Error fetching invoice filter options:', result.error);
+        setInvoiceCount(0);
+        return;
+      }
+      setInvoiceCount(result.count ?? 0);
+      setOutletOptions(result.outlets ?? []);
+      setNamaBarangOptions(result.namaBarang ?? []);
+      setPrincipleOptions(result.principles ?? []);
+      setMEOptions(result.mes ?? []);
+      setFilteredInvoiceHistory([]);
+    } finally {
+      setLoadingHistory(false);
+      fetchingHistoryRef.current = false;
+    }
+  }, []);
+
+  const handleFilterChangeMkt = async (type: 'outlet' | 'namaBarang' | 'principle' | 'me', value: string) => {
+    let newOutlet = filterOutlet;
+    let newNamaBarang = filterNamaBarang;
+    let newPrinciple = filterPrinciple;
+    let newME = filterME;
+
+    switch (type) {
+      case 'outlet':     newOutlet = value;     setFilterOutlet(value);     break;
+      case 'namaBarang': newNamaBarang = value; setFilterNamaBarang(value); break;
+      case 'principle':  newPrinciple = value;  setFilterPrinciple(value);  break;
+      case 'me':         newME = value;          setFilterME(value);         break;
+    }
+
+    if (newOutlet === 'all' && newNamaBarang === 'all' && newPrinciple === 'all' && newME === 'all') {
+      setFilteredInvoiceHistory([]);
+      return;
+    }
+
+    setLoadingFilter(true);
+    try {
+      const result = await getFilteredInvoiceHistoryReadOnly({
+        outlet_name: newOutlet !== 'all' ? newOutlet : undefined,
+        nama_barang: newNamaBarang !== 'all' ? newNamaBarang : undefined,
+        principle: newPrinciple !== 'all' ? newPrinciple : undefined,
+        me: newME !== 'all' ? newME : undefined,
+      });
+      setFilteredInvoiceHistory(result.error ? [] : (result.data || []));
+    } finally {
+      setLoadingFilter(false);
+    }
+  };
+
+  const pivotDataMkt = useMemo(() => {
+    const data = filteredInvoiceHistory;
+    if (data.length === 0) return null;
+
+    const isByOutlet = filterNamaBarang !== 'all';
+
+    const getPeriod = (r: InvoiceHistory): number | null => {
+      if (typeof r.bln === 'number' && r.bln >= 100) return r.bln;
+      if (r.tgl) {
+        const d = new Date(r.tgl);
+        const yr = d.getFullYear() % 100;
+        const mo = d.getMonth() + 1;
+        return yr * 100 + mo;
+      }
+      return null;
+    };
+
+    const months = [...new Set(data.map(r => getPeriod(r)).filter((b): b is number => b !== null))].sort((a, b) => a - b);
+    const rowTotals = new Map<string, number>();
+    const rowMonths = new Map<string, Map<number, number>>();
+
+    for (const record of data) {
+      const rowKey = isByOutlet
+        ? (record.outlet_name || (record.no_outlet ? `Outlet ${record.no_outlet}` : 'Unknown'))
+        : (record.nama_barang || 'Unknown');
+      const value = record.penjualan || 0;
+
+      rowTotals.set(rowKey, (rowTotals.get(rowKey) || 0) + value);
+
+      const period = getPeriod(record);
+      if (period !== null) {
+        if (!rowMonths.has(rowKey)) rowMonths.set(rowKey, new Map());
+        const monthMap = rowMonths.get(rowKey)!;
+        monthMap.set(period, (monthMap.get(period) || 0) + value);
+      }
+    }
+
+    const rows = [...rowTotals.entries()]
+      .map(([name, total]) => ({ name, monthData: rowMonths.get(name) || new Map<number, number>(), total }))
+      .sort((a, b) => b.total - a.total);
+
+    const colTotals = new Map<number, number>();
+    for (const m of months) {
+      colTotals.set(m, rows.reduce((s, r) => s + (r.monthData.get(m) || 0), 0));
+    }
+    const grandTotal = rows.reduce((s, r) => s + r.total, 0);
+
+    return { rows, months, colTotals, grandTotal, isByOutlet };
+  }, [filteredInvoiceHistory, filterNamaBarang]);
+
   useEffect(() => {
     if (loading || !hasAccess || !user) return;
-    
+
     // Fetch outlets ketika tab adalah data-outlet
     if (tab === 'data-outlet') {
       fetchOutletData();
     } else if (tab === 'pengajuan-diskon') {
       fetchDiscountRequests();
+    } else if (tab === 'historis-pengambilan') {
+      fetchInvoiceHistory();
     } else {
       fetchOrders();
     }
@@ -534,102 +742,60 @@ Terima kasih!
   return (
     <div className="min-h-screen bg-black text-white">
       {/* Header */}
-      <header className="bg-gray-900 border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+      <header className="bg-gray-900 border-b border-gray-800 sticky top-0 z-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold">Marketing Dashboard</h1>
-            <p className="text-gray-400 text-sm">Sales & Invoice Management</p>
+            <h1 className="text-lg sm:text-2xl font-bold leading-tight">Marketing Dashboard</h1>
+            <p className="text-gray-400 text-xs sm:text-sm hidden sm:block">Sales & Invoice Management</p>
           </div>
-          <div className="flex items-center gap-6">
-            <button
-              onClick={handleLogout}
-              className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg"
-            >
-              Logout
-            </button>
-          </div>
+          <button
+            onClick={handleLogout}
+            className="bg-red-600 hover:bg-red-700 text-white font-medium py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg text-sm"
+          >
+            Logout
+          </button>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Tabs */}
-        <div className="flex gap-2 mb-8 flex-wrap">
-          <button
-            onClick={() => setTab('sales')}
-            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
-              tab === 'sales'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            Sales Orders (Pending)
-          </button>
-          <button
-            onClick={() => setTab('invoices')}
-            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
-              tab === 'invoices'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            Invoices (Released)
-          </button>
-          <button
-            onClick={() => setTab('pengajuan-diskon')}
-            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
-              tab === 'pengajuan-diskon'
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            💰 Pengajuan Diskon
-          </button>
-          <button
-            onClick={() => setTab('pengajuan-limit')}
-            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
-              tab === 'pengajuan-limit'
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            📊 Pengajuan Limit
-          </button>
-          <button
-            onClick={() => setTab('data-outlet')}
-            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
-              tab === 'data-outlet'
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            🏪 Data Outlet
-          </button>
-          <button
-            onClick={() => setTab('historis-pengambilan')}
-            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
-              tab === 'historis-pengambilan'
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            📈 Historis Pengambilan
-          </button>
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8">
+        {/* Tabs — horizontal scroll on mobile */}
+        <div className="flex gap-1.5 sm:gap-2 mb-4 sm:mb-8 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide">
+          {([
+            { key: 'sales', label: 'Sales Pending', color: 'blue' },
+            { key: 'invoices', label: 'Invoices', color: 'blue' },
+            { key: 'pengajuan-diskon', label: '💰 Diskon', color: 'purple' },
+            { key: 'pengajuan-limit', label: '📊 Limit', color: 'purple' },
+            { key: 'data-outlet', label: '🏪 Outlet', color: 'purple' },
+            { key: 'historis-pengambilan', label: '📈 Historis', color: 'purple' },
+          ] as const).map(({ key, label, color }) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`flex-shrink-0 py-2 px-3 sm:px-4 rounded-lg font-medium text-sm transition-colors whitespace-nowrap ${
+                tab === key
+                  ? color === 'blue' ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white'
+                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-2 mb-8 flex-wrap">
+        <div className="grid grid-cols-2 sm:flex gap-2 mb-4 sm:mb-8">
           <button
             onClick={() => router.push('/sales')}
-            className="py-2 px-4 rounded-lg font-medium bg-green-600 hover:bg-green-700 text-white transition-colors"
+            className="py-2 px-3 sm:px-4 rounded-lg font-medium text-sm bg-green-600 hover:bg-green-700 text-white transition-colors text-center"
           >
-            + Buat Sales Order Baru
+            + Sales Order Baru
           </button>
           <button
             onClick={() => router.push('/dashboard')}
-            className="py-2 px-4 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 text-white transition-colors"
+            className="py-2 px-3 sm:px-4 rounded-lg font-medium text-sm bg-gray-700 hover:bg-gray-600 text-white transition-colors text-center"
           >
-            ← Kembali ke Dashboard
+            ← Dashboard
           </button>
         </div>
 
@@ -1138,45 +1304,139 @@ Terima kasih!
           </div>
         )}
 
-        {/* Historis Pengambilan Tab */}
+        {/* Historis Penjualan Pivot Tab */}
         {tab === 'historis-pengambilan' && (
-          <div>
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-white mb-2">Historis Pengambilan</h2>
-              <p className="text-gray-400">Riwayat pengambilan barang oleh outlet</p>
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-lg sm:text-2xl font-bold text-white mb-1 sm:mb-2">📋 Historis Penjualan (Faktur)</h2>
+              <p className="text-gray-400 text-sm sm:text-base">Riwayat penjualan dan faktur dari semua outlet</p>
             </div>
 
-            {/* Filter */}
-            <div className="mb-6 flex gap-3 flex-wrap">
-              <select className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
-                <option>Semua Outlet</option>
-              </select>
-              <select className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
-                <option>Semua Periode</option>
-                <option>Bulan ini</option>
-                <option>3 bulan terakhir</option>
-                <option>6 bulan terakhir</option>
-              </select>
-              <input
-                type="date"
-                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+            {/* Filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+              <SearchableSelectMkt
+                value={filterOutlet}
+                onChange={(v) => handleFilterChangeMkt('outlet', v)}
+                options={outletOptions}
+                placeholder="Semua Outlet"
+                icon="📦"
+              />
+              <SearchableSelectMkt
+                value={filterNamaBarang}
+                onChange={(v) => handleFilterChangeMkt('namaBarang', v)}
+                options={namaBarangOptions}
+                placeholder="Semua Barang"
+                icon="📋"
+              />
+              <SearchableSelectMkt
+                value={filterPrinciple}
+                onChange={(v) => handleFilterChangeMkt('principle', v)}
+                options={principleOptions}
+                placeholder="Semua Principle"
+                icon="🏢"
+              />
+              <SearchableSelectMkt
+                value={filterME}
+                onChange={(v) => handleFilterChangeMkt('me', v)}
+                options={meOptions}
+                placeholder="Semua ME"
+                icon="👤"
               />
             </div>
 
-            {/* Placeholder - Empty State */}
-            <div className="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
-              <div className="text-5xl mb-4">📈</div>
-              <h3 className="text-xl font-semibold text-white mb-2">Data historis pengambilan kosong</h3>
-              <p className="text-gray-400">Riwayat pengambilan barang akan ditampilkan di sini setelah ada transaksi</p>
-            </div>
+            {/* Data */}
+            {loadingHistory || loadingFilter ? (
+              <div className="flex justify-center py-12">
+                <LoadingSpinner />
+              </div>
+            ) : invoiceCount === 0 ? (
+              <div className="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
+                <div className="text-5xl mb-4">📋</div>
+                <h3 className="text-xl font-semibold text-white mb-2">Belum ada data historis penjualan</h3>
+                <p className="text-gray-400">Data akan tersedia setelah admin mengupload CSV penjualan</p>
+              </div>
+            ) : filterOutlet === 'all' && filterNamaBarang === 'all' && filterPrinciple === 'all' && filterME === 'all' ? (
+              <div className="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
+                <div className="text-5xl mb-4">🔍</div>
+                <h3 className="text-xl font-semibold text-white mb-2">Pilih filter untuk melihat data pivot</h3>
+                <p className="text-gray-400">Pilih Outlet, Nama Barang, Principle, atau ME untuk memuat data ({invoiceCount.toLocaleString('id-ID')}+ record tersedia)</p>
+              </div>
+            ) : filteredInvoiceHistory.length === 0 ? (
+              <div className="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
+                <div className="text-5xl mb-4">📭</div>
+                <h3 className="text-xl font-semibold text-white mb-2">Tidak ada data untuk filter ini</h3>
+                <p className="text-gray-400">Coba ubah atau hapus filter yang dipilih</p>
+              </div>
+            ) : pivotDataMkt ? (
+              <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                <div className="text-sm text-gray-400 mb-3">
+                  {pivotDataMkt.isByOutlet
+                    ? `Nama Barang: "${filterNamaBarang}" → Dikelompokkan per Outlet`
+                    : filterOutlet !== 'all'
+                    ? `Outlet: "${filterOutlet}" → Dikelompokkan per Barang`
+                    : 'Semua Barang → Dikelompokkan per Bulan'}
+                  <span className="ml-3 text-gray-500">({pivotDataMkt.rows.length} baris | {filteredInvoiceHistory.length.toLocaleString('id-ID')} record)</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-gray-800">
+                        <th className="px-4 py-3 text-left text-gray-200 font-semibold border border-gray-700 sticky left-0 bg-gray-800 min-w-[220px] z-10">
+                          {pivotDataMkt.isByOutlet ? 'Nama Outlet' : 'Nama Barang'}
+                        </th>
+                        {pivotDataMkt.months.map(m => (
+                          <th key={m} className="px-4 py-3 text-right text-gray-200 font-semibold border border-gray-700 whitespace-nowrap min-w-[120px]">
+                            {blnLabelMkt(m)}
+                          </th>
+                        ))}
+                        <th className="px-4 py-3 text-right text-blue-400 font-semibold border border-gray-700 whitespace-nowrap min-w-[130px]">
+                          Grand Total
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pivotDataMkt.rows.map((row, idx) => (
+                        <tr key={idx} className={`hover:bg-gray-800/60 ${idx % 2 === 0 ? '' : 'bg-gray-900/60'}`}>
+                          <td className="px-4 py-2 text-gray-200 border border-gray-800 sticky left-0 bg-gray-900 font-medium z-10 text-sm">
+                            {row.name}
+                          </td>
+                          {pivotDataMkt.months.map(m => (
+                            <td key={m} className="px-4 py-2 text-right text-gray-300 border border-gray-800 tabular-nums text-sm">
+                              {row.monthData.has(m) ? row.monthData.get(m)!.toLocaleString('id-ID') : ''}
+                            </td>
+                          ))}
+                          <td className="px-4 py-2 text-right text-blue-400 font-semibold border border-gray-800 tabular-nums text-sm">
+                            {row.total.toLocaleString('id-ID')}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="bg-gray-800 font-semibold border-t-2 border-gray-600">
+                        <td className="px-4 py-3 text-gray-100 border border-gray-700 sticky left-0 bg-gray-800 z-10">
+                          Grand Total
+                        </td>
+                        {pivotDataMkt.months.map(m => (
+                          <td key={m} className="px-4 py-3 text-right text-gray-100 border border-gray-700 tabular-nums">
+                            {(pivotDataMkt.colTotals.get(m) || 0).toLocaleString('id-ID')}
+                          </td>
+                        ))}
+                        <td className="px-4 py-3 text-right text-blue-400 border border-gray-700 tabular-nums">
+                          {pivotDataMkt.grandTotal.toLocaleString('id-ID')}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
       </main>
 
       {/* Pengajuan Diskon Modal */}
       {showDiscountRequestModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-gray-900 border-t sm:border border-gray-800 rounded-t-2xl sm:rounded-2xl p-5 sm:p-8 w-full sm:max-w-md max-h-[92vh] overflow-y-auto">
+            <div className="sm:hidden w-10 h-1 bg-gray-600 rounded-full mx-auto -mt-2 mb-4" />
             <h2 className="text-xl font-bold mb-6 text-white">Ajukan Diskon</h2>
             
             <div className="space-y-4 mb-6">
@@ -1339,8 +1599,9 @@ Terima kasih!
 
       {/* Pengajuan Limit Modal */}
       {showLimitRequestModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 w-full max-w-md">
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-gray-900 border-t sm:border border-gray-800 rounded-t-2xl sm:rounded-2xl p-5 sm:p-8 w-full sm:max-w-md max-h-[92vh] overflow-y-auto">
+            <div className="sm:hidden w-10 h-1 bg-gray-600 rounded-full mx-auto -mt-2 mb-4" />
             <h2 className="text-xl font-bold mb-6 text-white">Ajukan Peningkatan Limit</h2>
             
             <div className="space-y-4 mb-6">
@@ -1404,8 +1665,9 @@ Terima kasih!
 
       {/* Edit Invoice Modal */}
       {showEditModal && editingInvoice && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 w-full max-w-md">
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-gray-900 border-t sm:border border-gray-800 rounded-t-2xl sm:rounded-2xl p-5 sm:p-8 w-full sm:max-w-md max-h-[92vh] overflow-y-auto">
+            <div className="sm:hidden w-10 h-1 bg-gray-600 rounded-full mx-auto -mt-2 mb-4" />
             <h2 className="text-xl font-bold mb-4 text-white">Edit Invoice</h2>
             
             <div className="space-y-4 mb-6">
@@ -1487,8 +1749,9 @@ Terima kasih!
 
       {/* Detail Modal */}
       {showDetailModal && detailInvoice && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-gray-900 border-t sm:border border-gray-800 rounded-t-2xl sm:rounded-2xl p-4 sm:p-6 w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto">
+            <div className="sm:hidden w-10 h-1 bg-gray-600 rounded-full mx-auto -mt-1 mb-4" />
             <div className="flex justify-between items-start mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-white">
@@ -1682,8 +1945,9 @@ Terima kasih!
 
       {/* Faktur Photos Modal */}
       {showFakturPhotosModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-900 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-gray-900 border-t sm:border border-gray-800 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto">
+            <div className="sm:hidden w-10 h-1 bg-gray-600 rounded-full mx-auto mt-3 mb-1" />
             <div className="sticky top-0 bg-gray-800 px-6 py-4 border-b border-gray-700 flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">📸 Foto Faktur</h2>
               <button
