@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { logIn } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -10,10 +10,22 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
 
   // Form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // Auto-redirect jika sudah login
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        router.replace('/dashboard');
+      } else {
+        setCheckingSession(false);
+      }
+    });
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,6 +125,10 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (checkingSession) {
+    return <div className="min-h-screen bg-black flex items-center justify-center"><div className="text-gray-400 text-sm">Memuat...</div></div>;
+  }
 
   return (
     <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
