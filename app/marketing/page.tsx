@@ -12,6 +12,7 @@ import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
 import { getFakturImages, FakturImage } from '@/lib/faktur-images';
 import { createDiscountRequest, getDiscountRequests, type DiscountRequest, getInvoiceFilterOptionsReadOnly, getFilteredInvoiceHistoryReadOnly, type InvoiceHistory } from '@/lib/discount-requests';
+import { getSalesReport } from '@/lib/sales-report';
 
 type MarketingInvoice = {
   id: string;
@@ -49,6 +50,12 @@ type Product = {
   stok?: number;
   golongan_barang?: string;
   komposisi?: string;
+};
+
+type SalesReportRowMkt = {
+  no_outlet: string; nama_outlet: string; status: string; me: string;
+  cluster: string; kelompok: string; target: number; pencapaian: number;
+  pt_persen: number; pt_selisih: number; t_poin: number; p_poin: number; poin_persen: number;
 };
 
 const MONTH_NAMES_MKT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -142,7 +149,7 @@ export default function MarketingDashboard() {
   const { user, loading } = useAuth();
   const { hasAccess } = useRoleCheck(['marketing', 'super_admin']);
 
-  const [tab, setTab] = useState<'sales' | 'invoices' | 'pengajuan-diskon' | 'pengajuan-limit' | 'data-outlet' | 'historis-pengambilan'>('sales');
+  const [tab, setTab] = useState<'sales' | 'invoices' | 'pengajuan-diskon' | 'pengajuan-limit' | 'data-outlet' | 'historis-pengambilan' | 'report-sales'>('sales');
   const [pendingInvoices, setPendingInvoices] = useState<MarketingInvoice[]>([]);
   const [invoices, setInvoices] = useState<MarketingInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -218,6 +225,17 @@ export default function MarketingDashboard() {
   const [principleOptions, setPrincipleOptions] = useState<string[]>([]);
   const [meOptions, setMEOptions] = useState<string[]>([]);
   const fetchingHistoryRef = useRef(false);
+
+  // Report Sales (in-memory CSV)
+  const [salesReportMkt, setSalesReportMkt] = useState<SalesReportRowMkt[]>([]);
+  const [salesFileNameMkt, setSalesFileNameMkt] = useState('');
+  const [salesLoadingMkt, setSalesLoadingMkt] = useState(false);
+  const [salesFilterMEMkt, setSalesFilterMEMkt] = useState('all');
+  const [salesFilterClusterMkt, setSalesFilterClusterMkt] = useState('all');
+  const [salesFilterStatusMkt, setSalesFilterStatusMkt] = useState('all');
+  const [salesFilterKelompokMkt, setSalesFilterKelompokMkt] = useState('all');
+  const [salesSortKeyMkt, setSalesSortKeyMkt] = useState<keyof SalesReportRowMkt | ''>('');
+  const [salesSortDirMkt, setSalesSortDirMkt] = useState<'asc' | 'desc'>('asc');
 
   // Helper function to get date range based on filter
   const getDateRange = (filter: 'today' | '1week' | '1month' | '1q' | 'all'): { start: Date; end: Date } => {
@@ -388,6 +406,33 @@ export default function MarketingDashboard() {
     }
   }, []);
 
+  const fetchSalesReportMkt = useCallback(async () => {
+    setSalesLoadingMkt(true);
+    try {
+      const result = await getSalesReport();
+      if (result.error) { console.error('fetchSalesReportMkt:', result.error); return; }
+      const rows = (result.data || []).map(r => ({
+        no_outlet: r.no_outlet ?? '',
+        nama_outlet: r.nama_outlet ?? '',
+        status: r.status ?? '',
+        me: r.me ?? '',
+        cluster: r.cluster ?? '',
+        kelompok: r.kelompok ?? '',
+        target: r.target ?? 0,
+        pencapaian: r.pencapaian ?? 0,
+        pt_persen: r.pt_persen ?? 0,
+        pt_selisih: r.pt_selisih ?? 0,
+        t_poin: r.t_poin ?? 0,
+        p_poin: r.p_poin ?? 0,
+        poin_persen: r.poin_persen ?? 0,
+      }));
+      setSalesReportMkt(rows);
+      setSalesFileNameMkt(result.reportName || '');
+    } finally {
+      setSalesLoadingMkt(false);
+    }
+  }, []);
+
   const handleFilterChangeMkt = async (type: 'outlet' | 'namaBarang' | 'principle' | 'me', value: string) => {
     let newOutlet = filterOutlet;
     let newNamaBarang = filterNamaBarang;
@@ -470,6 +515,44 @@ export default function MarketingDashboard() {
     return { rows, months, colTotals, grandTotal, isByOutlet };
   }, [filteredInvoiceHistory, filterNamaBarang]);
 
+  // Report Sales derived data
+  const salesFilteredMkt = useMemo(() => {
+    let rows = salesReportMkt;
+    if (salesFilterMEMkt !== 'all') rows = rows.filter(r => r.me === salesFilterMEMkt);
+    if (salesFilterClusterMkt !== 'all') rows = rows.filter(r => r.cluster === salesFilterClusterMkt);
+    if (salesFilterStatusMkt !== 'all') rows = rows.filter(r => r.status.toLowerCase() === salesFilterStatusMkt);
+    if (salesFilterKelompokMkt !== 'all') rows = rows.filter(r => r.kelompok === salesFilterKelompokMkt);
+    if (salesSortKeyMkt) {
+      rows = [...rows].sort((a, b) => {
+        const av = a[salesSortKeyMkt], bv = b[salesSortKeyMkt];
+        const cmp = typeof av === 'number' ? (av as number) - (bv as number) : String(av).localeCompare(String(bv));
+        return salesSortDirMkt === 'asc' ? cmp : -cmp;
+      });
+    }
+    return rows;
+  }, [salesReportMkt, salesFilterMEMkt, salesFilterClusterMkt, salesFilterStatusMkt, salesFilterKelompokMkt, salesSortKeyMkt, salesSortDirMkt]);
+
+  const salesOptionsMkt = useMemo(() => ({
+    mes: [...new Set(salesReportMkt.map(r => r.me).filter(Boolean))].sort(),
+    clusters: [...new Set(salesReportMkt.map(r => r.cluster).filter(Boolean))].sort(),
+    kelompoks: [...new Set(salesReportMkt.map(r => r.kelompok).filter(Boolean))].sort(),
+  }), [salesReportMkt]);
+
+  const salesSummaryMkt = useMemo(() => {
+    const rows = salesFilteredMkt;
+    const aktif = rows.filter(r => r.status.toLowerCase() === 'on').length;
+    const totalTarget = rows.reduce((s, r) => s + r.target, 0);
+    const totalPencapaian = rows.reduce((s, r) => s + r.pencapaian, 0);
+    const totalTPoin = rows.reduce((s, r) => s + r.t_poin, 0);
+    const totalPPoin = rows.reduce((s, r) => s + r.p_poin, 0);
+    return {
+      total: rows.length, aktif, totalTarget, totalPencapaian,
+      ptPersen: totalTarget > 0 ? (totalPencapaian / totalTarget) * 100 : 0,
+      totalTPoin, totalPPoin,
+      pointPersen: totalTPoin > 0 ? (totalPPoin / totalTPoin) * 100 : 0,
+    };
+  }, [salesFilteredMkt]);
+
   useEffect(() => {
     if (loading || !hasAccess || !user) return;
 
@@ -480,6 +563,8 @@ export default function MarketingDashboard() {
       fetchDiscountRequests();
     } else if (tab === 'historis-pengambilan') {
       fetchInvoiceHistory();
+    } else if (tab === 'report-sales') {
+      fetchSalesReportMkt();
     } else {
       fetchOrders();
     }
@@ -768,13 +853,14 @@ Terima kasih!
             { key: 'pengajuan-limit', label: '📊 Limit', color: 'purple' },
             { key: 'data-outlet', label: '🏪 Outlet', color: 'purple' },
             { key: 'historis-pengambilan', label: '📈 Historis', color: 'purple' },
+            { key: 'report-sales', label: '📊 Report Sales', color: 'green' },
           ] as const).map(({ key, label, color }) => (
             <button
               key={key}
               onClick={() => setTab(key)}
               className={`flex-shrink-0 py-2 px-3 sm:px-4 rounded-lg font-medium text-sm transition-colors whitespace-nowrap ${
                 tab === key
-                  ? color === 'blue' ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white'
+                  ? color === 'blue' ? 'bg-blue-600 text-white' : color === 'green' ? 'bg-green-600 text-white' : 'bg-purple-600 text-white'
                   : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
               }`}
             >
@@ -1428,6 +1514,142 @@ Terima kasih!
                 </div>
               </div>
             ) : null}
+          </div>
+        )}
+
+        {/* REPORT SALES TAB */}
+        {tab === 'report-sales' && (
+          <div className="space-y-5 sm:space-y-6">
+            {/* Header */}
+            <div>
+              <h2 className="text-lg sm:text-2xl font-bold text-white">📊 Report Sales</h2>
+              <p className="text-gray-400 text-xs sm:text-sm mt-0.5">Laporan pencapaian sales dari database — diupload oleh admin</p>
+            </div>
+
+            {salesLoadingMkt ? (
+              <div className="flex justify-center py-12">
+                <LoadingSpinner />
+              </div>
+            ) : salesReportMkt.length === 0 ? (
+              <div className="bg-gray-900 border-2 border-dashed border-gray-700 rounded-xl p-12 text-center">
+                <div className="text-5xl mb-4">📊</div>
+                <h3 className="text-lg font-semibold text-white mb-2">Belum ada data report</h3>
+                <p className="text-gray-400 text-sm">Data akan tersedia setelah admin mengupload CSV report sales</p>
+              </div>
+            ) : (
+              <>
+                {/* File info */}
+                <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <span>📄</span>
+                  <span className="text-green-400 font-medium">{salesFileNameMkt}</span>
+                  <span>—</span>
+                  <span>{salesReportMkt.length.toLocaleString('id-ID')} outlet</span>
+                </div>
+
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+                  {[
+                    { label: 'Total Outlet', value: salesSummaryMkt.total.toLocaleString('id-ID'), sub: `${salesSummaryMkt.aktif} aktif`, color: 'blue' },
+                    { label: 'Total Target', value: `Rp ${salesSummaryMkt.totalTarget.toLocaleString('id-ID')}`, sub: 'dari filter aktif', color: 'gray' },
+                    { label: 'Total Pencapaian', value: `Rp ${salesSummaryMkt.totalPencapaian.toLocaleString('id-ID')}`, sub: `selisih: Rp ${(salesSummaryMkt.totalPencapaian - salesSummaryMkt.totalTarget).toLocaleString('id-ID')}`, color: salesSummaryMkt.totalPencapaian >= salesSummaryMkt.totalTarget ? 'green' : 'red' },
+                    { label: 'P/T %', value: `${salesSummaryMkt.ptPersen.toFixed(1)}%`, sub: `Poin: ${salesSummaryMkt.pointPersen.toFixed(1)}%`, color: salesSummaryMkt.ptPersen >= 100 ? 'green' : salesSummaryMkt.ptPersen >= 80 ? 'yellow' : 'red' },
+                  ].map(card => (
+                    <div key={card.label} className="bg-gray-900 rounded-xl p-3 sm:p-4 border border-gray-800">
+                      <p className="text-gray-400 text-xs mb-1">{card.label}</p>
+                      <p className={`text-base sm:text-lg font-bold ${card.color === 'green' ? 'text-green-400' : card.color === 'red' ? 'text-red-400' : card.color === 'yellow' ? 'text-yellow-400' : card.color === 'blue' ? 'text-blue-400' : 'text-white'}`}>{card.value}</p>
+                      <p className="text-gray-500 text-xs mt-0.5">{card.sub}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Filters */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <select value={salesFilterStatusMkt} onChange={e => setSalesFilterStatusMkt(e.target.value)} className="bg-gray-900 border border-gray-800 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-green-500">
+                    <option value="all">Semua Status</option>
+                    <option value="on">Aktif (ON)</option>
+                    <option value="off">Non-Aktif (OFF)</option>
+                  </select>
+                  <select value={salesFilterMEMkt} onChange={e => setSalesFilterMEMkt(e.target.value)} className="bg-gray-900 border border-gray-800 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-green-500">
+                    <option value="all">Semua ME</option>
+                    {salesOptionsMkt.mes.map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                  <select value={salesFilterClusterMkt} onChange={e => setSalesFilterClusterMkt(e.target.value)} className="bg-gray-900 border border-gray-800 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-green-500">
+                    <option value="all">Semua Cluster</option>
+                    {salesOptionsMkt.clusters.map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                  <select value={salesFilterKelompokMkt} onChange={e => setSalesFilterKelompokMkt(e.target.value)} className="bg-gray-900 border border-gray-800 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-green-500">
+                    <option value="all">Semua Kelompok</option>
+                    {salesOptionsMkt.kelompoks.map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+
+                {/* Table */}
+                <div className="overflow-auto max-h-[60vh] rounded-xl border border-gray-800">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-900 text-gray-400 text-xs uppercase sticky top-0 z-10">
+                      <tr>
+                        {(
+                          [
+                            ['no_outlet', 'No Outlet'], ['nama_outlet', 'Nama Outlet'],
+                            ['status', 'Status'], ['me', 'ME'], ['cluster', 'Cluster'], ['kelompok', 'Kelompok'],
+                            ['target', 'Target'], ['pencapaian', 'Pencapaian'],
+                            ['pt_persen', 'P/T %'], ['pt_selisih', 'P-T'],
+                            ['t_poin', 'T Poin'], ['p_poin', 'P Poin'], ['poin_persen', 'P Poin/T Poin %'],
+                          ] as [keyof SalesReportRowMkt, string][]
+                        ).map(([key, label]) => (
+                          <th key={key} className="px-3 py-3 text-left cursor-pointer hover:text-white select-none whitespace-nowrap"
+                            onClick={() => {
+                              if (salesSortKeyMkt === key) setSalesSortDirMkt(d => d === 'asc' ? 'desc' : 'asc');
+                              else { setSalesSortKeyMkt(key); setSalesSortDirMkt('asc'); }
+                            }}>
+                            {label} {salesSortKeyMkt === key ? (salesSortDirMkt === 'asc' ? '▲' : '▼') : ''}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {salesFilteredMkt.map((row, idx) => {
+                        const ptColor = row.pt_persen >= 100 ? 'text-green-400' : row.pt_persen >= 80 ? 'text-yellow-400' : 'text-red-400';
+                        const poinColor = row.poin_persen >= 100 ? 'text-green-400' : row.poin_persen >= 80 ? 'text-yellow-400' : 'text-red-400';
+                        const isAktif = row.status.toLowerCase() === 'on';
+                        return (
+                          <tr key={idx} className="border-t border-gray-800 hover:bg-gray-800/40">
+                            <td className="px-3 py-2.5 text-gray-300">{row.no_outlet}</td>
+                            <td className="px-3 py-2.5 text-white font-medium whitespace-nowrap">{row.nama_outlet}</td>
+                            <td className="px-3 py-2.5">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${isAktif ? 'bg-green-900/50 text-green-300' : 'bg-gray-700 text-gray-400'}`}>
+                                {isAktif ? 'ON' : 'OFF'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 text-gray-300 whitespace-nowrap">{row.me}</td>
+                            <td className="px-3 py-2.5 text-gray-300">{row.cluster}</td>
+                            <td className="px-3 py-2.5 text-gray-300 whitespace-nowrap">{row.kelompok}</td>
+                            <td className="px-3 py-2.5 text-gray-300 text-right">{row.target.toLocaleString('id-ID')}</td>
+                            <td className="px-3 py-2.5 text-gray-300 text-right">{row.pencapaian.toLocaleString('id-ID')}</td>
+                            <td className={`px-3 py-2.5 text-right font-semibold ${ptColor}`}>{row.pt_persen.toFixed(1)}%</td>
+                            <td className={`px-3 py-2.5 text-right ${row.pt_selisih >= 0 ? 'text-green-400' : 'text-red-400'}`}>{row.pt_selisih.toLocaleString('id-ID')}</td>
+                            <td className="px-3 py-2.5 text-gray-300 text-right">{row.t_poin.toLocaleString('id-ID')}</td>
+                            <td className="px-3 py-2.5 text-gray-300 text-right">{row.p_poin.toLocaleString('id-ID')}</td>
+                            <td className={`px-3 py-2.5 text-right font-semibold ${poinColor}`}>{row.poin_persen.toFixed(1)}%</td>
+                          </tr>
+                        );
+                      })}
+                      {/* Summary row */}
+                      <tr className="border-t-2 border-gray-600 bg-gray-900 font-semibold text-xs">
+                        <td className="px-3 py-2.5 text-gray-400" colSpan={6}>TOTAL ({salesFilteredMkt.length} outlet)</td>
+                        <td className="px-3 py-2.5 text-white text-right">{salesSummaryMkt.totalTarget.toLocaleString('id-ID')}</td>
+                        <td className="px-3 py-2.5 text-white text-right">{salesSummaryMkt.totalPencapaian.toLocaleString('id-ID')}</td>
+                        <td className={`px-3 py-2.5 text-right ${salesSummaryMkt.ptPersen >= 100 ? 'text-green-400' : salesSummaryMkt.ptPersen >= 80 ? 'text-yellow-400' : 'text-red-400'}`}>{salesSummaryMkt.ptPersen.toFixed(1)}%</td>
+                        <td className={`px-3 py-2.5 text-right ${salesSummaryMkt.totalPencapaian - salesSummaryMkt.totalTarget >= 0 ? 'text-green-400' : 'text-red-400'}`}>{(salesSummaryMkt.totalPencapaian - salesSummaryMkt.totalTarget).toLocaleString('id-ID')}</td>
+                        <td className="px-3 py-2.5 text-white text-right">{salesSummaryMkt.totalTPoin.toLocaleString('id-ID')}</td>
+                        <td className="px-3 py-2.5 text-white text-right">{salesSummaryMkt.totalPPoin.toLocaleString('id-ID')}</td>
+                        <td className={`px-3 py-2.5 text-right ${salesSummaryMkt.pointPersen >= 100 ? 'text-green-400' : salesSummaryMkt.pointPersen >= 80 ? 'text-yellow-400' : 'text-red-400'}`}>{salesSummaryMkt.pointPersen.toFixed(1)}%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         )}
       </main>

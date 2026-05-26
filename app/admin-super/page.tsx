@@ -17,7 +17,24 @@ import {
 import { UserRole } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { getAllDiscountRequests, approveDiscountRequest, rejectDiscountRequest, type DiscountRequest, getInvoiceFilterOptions, getFilteredInvoiceHistory, deleteAllInvoiceHistory, batchInsertInvoiceHistoryWithOutlets, type InvoiceHistory } from '@/lib/discount-requests';
+import { getSalesReport, replaceSalesReport, deleteAllSalesReport } from '@/lib/sales-report';
 import { getOutlets } from '@/lib/export';
+
+type SalesReportRow = {
+  no_outlet: string;
+  nama_outlet: string;
+  status: string;
+  me: string;
+  cluster: string;
+  kelompok: string;
+  target: number;
+  pencapaian: number;
+  pt_persen: number;
+  pt_selisih: number;
+  t_poin: number;
+  p_poin: number;
+  poin_persen: number;
+};
 
 type SalesStats = {
   totalOrders: number;
@@ -184,7 +201,7 @@ export default function AdminSuperDashboard() {
   }, []);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'pengajuan-diskon' | 'historis-pengambilan'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'pengajuan-diskon' | 'historis-pengambilan' | 'report-sales'>('dashboard');
 
   // Sales Dashboard states
   const [salesStats, setSalesStats] = useState<SalesStats | null>(null);
@@ -256,6 +273,17 @@ export default function AdminSuperDashboard() {
   const [loadingFilter, setLoadingFilter] = useState(false);
   const fetchingHistoryRef = useRef(false);
 
+  // Report Sales (in-memory CSV, no DB)
+  const [salesReport, setSalesReport] = useState<SalesReportRow[]>([]);
+  const [salesFileName, setSalesFileName] = useState('');
+  const [salesLoading, setSalesLoading] = useState(false);
+  const [salesFilterME, setSalesFilterME] = useState('all');
+  const [salesFilterCluster, setSalesFilterCluster] = useState('all');
+  const [salesFilterStatus, setSalesFilterStatus] = useState('all');
+  const [salesFilterKelompok, setSalesFilterKelompok] = useState('all');
+  const [salesSortKey, setSalesSortKey] = useState<keyof SalesReportRow | ''>('');
+  const [salesSortDir, setSalesSortDir] = useState<'asc' | 'desc'>('asc');
+
   // Redirect if not super admin
   useEffect(() => {
     if (!roleCheckLoading && !hasAccess) {
@@ -290,6 +318,40 @@ export default function AdminSuperDashboard() {
       fetchInvoiceHistory();
     }
   }, [user, activeTab]);
+
+  // Fetch sales report from DB when tab opens
+  const fetchSalesReport = useCallback(async () => {
+    setSalesLoading(true);
+    try {
+      const result = await getSalesReport();
+      if (result.error) { console.error('fetchSalesReport:', result.error); return; }
+      const rows = (result.data || []).map(r => ({
+        no_outlet: r.no_outlet ?? '',
+        nama_outlet: r.nama_outlet ?? '',
+        status: r.status ?? '',
+        me: r.me ?? '',
+        cluster: r.cluster ?? '',
+        kelompok: r.kelompok ?? '',
+        target: r.target ?? 0,
+        pencapaian: r.pencapaian ?? 0,
+        pt_persen: r.pt_persen ?? 0,
+        pt_selisih: r.pt_selisih ?? 0,
+        t_poin: r.t_poin ?? 0,
+        p_poin: r.p_poin ?? 0,
+        poin_persen: r.poin_persen ?? 0,
+      }));
+      setSalesReport(rows);
+      setSalesFileName(result.reportName || '');
+    } finally {
+      setSalesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user && activeTab === 'report-sales') {
+      fetchSalesReport();
+    }
+  }, [user, activeTab, fetchSalesReport]);
 
   const fetchSalesData = useCallback(async () => {
     try {
@@ -535,6 +597,48 @@ export default function AdminSuperDashboard() {
     return { rows, months, colTotals, grandTotal, isByOutlet };
   }, [filteredInvoiceHistory, filterNamaBarang]);
 
+  // Report Sales derived data
+  const salesFiltered = useMemo(() => {
+    let rows = salesReport;
+    if (salesFilterME !== 'all') rows = rows.filter(r => r.me === salesFilterME);
+    if (salesFilterCluster !== 'all') rows = rows.filter(r => r.cluster === salesFilterCluster);
+    if (salesFilterStatus !== 'all') rows = rows.filter(r => r.status.toLowerCase() === salesFilterStatus);
+    if (salesFilterKelompok !== 'all') rows = rows.filter(r => r.kelompok === salesFilterKelompok);
+    if (salesSortKey) {
+      rows = [...rows].sort((a, b) => {
+        const av = a[salesSortKey], bv = b[salesSortKey];
+        const cmp = typeof av === 'number' ? (av as number) - (bv as number) : String(av).localeCompare(String(bv));
+        return salesSortDir === 'asc' ? cmp : -cmp;
+      });
+    }
+    return rows;
+  }, [salesReport, salesFilterME, salesFilterCluster, salesFilterStatus, salesFilterKelompok, salesSortKey, salesSortDir]);
+
+  const salesOptions = useMemo(() => ({
+    mes: [...new Set(salesReport.map(r => r.me).filter(Boolean))].sort(),
+    clusters: [...new Set(salesReport.map(r => r.cluster).filter(Boolean))].sort(),
+    kelompoks: [...new Set(salesReport.map(r => r.kelompok).filter(Boolean))].sort(),
+  }), [salesReport]);
+
+  const salesSummary = useMemo(() => {
+    const rows = salesFiltered;
+    const aktif = rows.filter(r => r.status.toLowerCase() === 'on').length;
+    const totalTarget = rows.reduce((s, r) => s + r.target, 0);
+    const totalPencapaian = rows.reduce((s, r) => s + r.pencapaian, 0);
+    const totalTPoin = rows.reduce((s, r) => s + r.t_poin, 0);
+    const totalPPoin = rows.reduce((s, r) => s + r.p_poin, 0);
+    return {
+      total: rows.length,
+      aktif,
+      totalTarget,
+      totalPencapaian,
+      ptPersen: totalTarget > 0 ? (totalPencapaian / totalTarget) * 100 : 0,
+      totalTPoin,
+      totalPPoin,
+      pointPersen: totalTPoin > 0 ? (totalPPoin / totalTPoin) * 100 : 0,
+    };
+  }, [salesFiltered]);
+
   // Handle filter changes — fetches filtered data from DB on every change
   const handleFilterChange = async (type: 'outlet' | 'namaBarang' | 'principle' | 'me', value: string) => {
     let newOutlet = filterOutlet;
@@ -599,6 +703,122 @@ export default function AdminSuperDashboard() {
       }
     } finally {
       setLoadingHistory(false);
+    }
+  };
+
+  const handleSalesCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith('.csv')) { alert('File harus berformat .csv'); return; }
+    setSalesLoading(true);
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) { alert('File CSV kosong atau tidak valid'); return; }
+
+      const parseCSVLine = (line: string, delim: string): string[] => {
+        const result: string[] = [];
+        let cur = '', inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i], nc = line[i + 1];
+          if (c === '"') { if (inQ && nc === '"') { cur += '"'; i++; } else { inQ = !inQ; } }
+          else if (c === delim && !inQ) { result.push(cur.trim().replace(/^"|"$/g, '')); cur = ''; }
+          else cur += c;
+        }
+        result.push(cur.trim().replace(/^"|"$/g, ''));
+        return result;
+      };
+
+      const firstLine = lines[0];
+      const sc = (firstLine.match(/;/g) || []).length;
+      const cc = (firstLine.match(/,/g) || []).length;
+      const delim = sc > cc ? ';' : ',';
+
+      const headers = parseCSVLine(firstLine, delim).map(h => h.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_/]/g, ''));
+
+      const col = (name: string): number => {
+        const aliases: Record<string, string[]> = {
+          no_outlet: ['no_outlet', 'no._outlet', 'nomor_outlet', 'no'],
+          nama_outlet: ['nama_outlet', 'nama_outlet/relasi', 'outlet', 'nama'],
+          status: ['status'],
+          me: ['me', 'marketing_executive'],
+          cluster: ['cluster', 'kluster'],
+          kelompok: ['kelompok', 'jenis'],
+          target: ['target'],
+          pencapaian: ['pencapaian', 'achieve', 'realisasi'],
+          pt_persen: ['p/t', 'pt', 'p/t_%', 'persentase'],
+          pt_selisih: ['p-t', 'selisih'],
+          t_poin: ['t_poin', 't_point', 'target_poin', 'tpoin'],
+          p_poin: ['p_poin', 'p_point', 'pencapaian_poin', 'ppoin'],
+          poin_persen: ['p_poin_/_t_poin', 'poin_%', 'p_poin/t_poin', 'ppoin/tpoin'],
+        };
+        const candidates = aliases[name] || [name];
+        for (const c of candidates) {
+          const idx = headers.findIndex(h => h === c || h.includes(c));
+          if (idx !== -1) return idx;
+        }
+        return -1;
+      };
+
+      const toNum = (v: string): number => {
+        // Strip whitespace, %, Rp, and other non-numeric noise
+        let s = v.trim().replace(/[%\sRp]/gi, '');
+        if (!s) return 0;
+        // Indonesian thousands + decimal: "60.000.000" or "1.000.000,50"
+        if (/^\-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s))
+          return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
+        // Standard thousands + decimal: "1,000,000" or "1,000.50"
+        if (/^\-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s))
+          return parseFloat(s.replace(/,/g, '')) || 0;
+        // Indonesian decimal only: "19,6" → 19.6
+        if (/^\-?\d+,\d+$/.test(s))
+          return parseFloat(s.replace(',', '.')) || 0;
+        // Standard / plain: "19.6", "19", "-48000"
+        return parseFloat(s.replace(/[^0-9.\-]/g, '')) || 0;
+      };
+
+      const rows: SalesReportRow[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const vals = parseCSVLine(lines[i], delim);
+        if (vals.every(v => !v.trim())) continue;
+        const get = (name: string) => { const idx = col(name); return idx >= 0 ? (vals[idx] || '').trim() : ''; };
+        const target = toNum(get('target'));
+        const pencapaian = toNum(get('pencapaian'));
+        const tPoin = toNum(get('t_poin'));
+        const pPoin = toNum(get('p_poin'));
+        rows.push({
+          no_outlet: get('no_outlet'),
+          nama_outlet: get('nama_outlet'),
+          status: get('status'),
+          me: get('me'),
+          cluster: get('cluster'),
+          kelompok: get('kelompok'),
+          target,
+          pencapaian,
+          pt_persen: col('pt_persen') >= 0 ? toNum(get('pt_persen')) : (target > 0 ? (pencapaian / target) * 100 : 0),
+          pt_selisih: col('pt_selisih') >= 0 ? toNum(get('pt_selisih')) : pencapaian - target,
+          t_poin: tPoin,
+          p_poin: pPoin,
+          poin_persen: col('poin_persen') >= 0 ? toNum(get('poin_persen')) : (tPoin > 0 ? (pPoin / tPoin) * 100 : 0),
+        });
+      }
+      const saveResult = await replaceSalesReport(rows, file.name);
+      if (saveResult.error) {
+        alert(`Gagal simpan ke database: ${saveResult.error}`);
+        return;
+      }
+      setSalesReport(rows);
+      setSalesFileName(file.name);
+      setSalesFilterME('all');
+      setSalesFilterCluster('all');
+      setSalesFilterStatus('all');
+      setSalesFilterKelompok('all');
+      setSalesSortKey('');
+    } catch (err) {
+      alert(`Error membaca CSV: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setSalesLoading(false);
+      e.target.value = '';
     }
   };
 
@@ -1105,7 +1325,17 @@ export default function AdminSuperDashboard() {
                 : 'border-transparent text-gray-400 hover:text-gray-300'
             }`}
           >
-            � Historis Penjualan
+            🗂️ Historis Penjualan
+          </button>
+          <button
+            onClick={() => setActiveTab('report-sales')}
+            className={`py-4 px-6 font-medium border-b-2 transition whitespace-nowrap ${
+              activeTab === 'report-sales'
+                ? 'border-green-500 text-green-400'
+                : 'border-transparent text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            📈 Report Sales
           </button>
         </div>
       </div>
@@ -1871,6 +2101,170 @@ export default function AdminSuperDashboard() {
                 Ditampilkan: {filteredInvoiceHistory.length.toLocaleString('id-ID')} record
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* REPORT SALES TAB */}
+      {activeTab === 'report-sales' && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-white">📈 Report Sales</h2>
+              <p className="text-gray-400 text-sm mt-1">Upload CSV laporan pencapaian sales — data disimpan ke database</p>
+            </div>
+            <label className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium cursor-pointer transition text-sm ${salesLoading ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`}>
+              {salesLoading ? '⏳ Memproses...' : '📤 Upload CSV'}
+              <input type="file" accept=".csv" className="hidden" onChange={handleSalesCSVUpload} disabled={salesLoading} />
+            </label>
+          </div>
+
+          {salesReport.length === 0 ? (
+            /* Empty state */
+            <div className="bg-gray-800 border-2 border-dashed border-gray-600 rounded-xl p-16 text-center">
+              <div className="text-5xl mb-4">📊</div>
+              <h3 className="text-xl font-semibold text-white mb-2">Belum ada data report</h3>
+              <p className="text-gray-400 mb-6">Upload file CSV untuk melihat laporan pencapaian sales</p>
+              <p className="text-gray-500 text-xs">Kolom yang dibutuhkan: no outlet, nama outlet, status, me, cluster, kelompok, target, pencapaian, P/T, P-T, T Poin, P Poin, P Poin/T Poin</p>
+            </div>
+          ) : (
+            <>
+              {/* File info */}
+              <div className="flex items-center gap-2 text-sm text-gray-400">
+                <span>📄</span>
+                <span className="text-green-400 font-medium">{salesFileName}</span>
+                <span>—</span>
+                <span>{salesReport.length.toLocaleString('id-ID')} outlet</span>
+                <button onClick={async () => {
+                  if (!confirm('Hapus semua data report sales dari database?')) return;
+                  setSalesLoading(true);
+                  try {
+                    const result = await deleteAllSalesReport();
+                    if (result.error) { alert(`Gagal hapus: ${result.error}`); return; }
+                    setSalesReport([]); setSalesFileName('');
+                  } finally { setSalesLoading(false); }
+                }} className="ml-2 text-red-400 hover:text-red-300 text-xs border border-red-800 px-2 py-0.5 rounded">Hapus</button>
+              </div>
+
+              {/* Summary Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: 'Total Outlet', value: salesSummary.total.toLocaleString('id-ID'), sub: `${salesSummary.aktif} aktif`, color: 'blue' },
+                  { label: 'Total Target', value: `Rp ${salesSummary.totalTarget.toLocaleString('id-ID')}`, sub: 'dari filter aktif', color: 'gray' },
+                  { label: 'Total Pencapaian', value: `Rp ${salesSummary.totalPencapaian.toLocaleString('id-ID')}`, sub: `selisih: Rp ${(salesSummary.totalPencapaian - salesSummary.totalTarget).toLocaleString('id-ID')}`, color: salesSummary.totalPencapaian >= salesSummary.totalTarget ? 'green' : 'red' },
+                  { label: 'P/T %', value: `${salesSummary.ptPersen.toFixed(1)}%`, sub: `Poin: ${salesSummary.pointPersen.toFixed(1)}%`, color: salesSummary.ptPersen >= 100 ? 'green' : salesSummary.ptPersen >= 80 ? 'yellow' : 'red' },
+                ].map(card => (
+                  <div key={card.label} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                    <p className="text-gray-400 text-xs mb-1">{card.label}</p>
+                    <p className={`text-lg font-bold ${card.color === 'green' ? 'text-green-400' : card.color === 'red' ? 'text-red-400' : card.color === 'yellow' ? 'text-yellow-400' : card.color === 'blue' ? 'text-blue-400' : 'text-white'}`}>{card.value}</p>
+                    <p className="text-gray-500 text-xs mt-0.5">{card.sub}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Filters */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {/* Status */}
+                <select value={salesFilterStatus} onChange={e => setSalesFilterStatus(e.target.value)} className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-green-500">
+                  <option value="all">Semua Status</option>
+                  <option value="on">Aktif (ON)</option>
+                  <option value="off">Non-Aktif (OFF)</option>
+                </select>
+                {/* ME */}
+                <select value={salesFilterME} onChange={e => setSalesFilterME(e.target.value)} className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-green-500">
+                  <option value="all">Semua ME</option>
+                  {salesOptions.mes.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+                {/* Cluster */}
+                <select value={salesFilterCluster} onChange={e => setSalesFilterCluster(e.target.value)} className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-green-500">
+                  <option value="all">Semua Cluster</option>
+                  {salesOptions.clusters.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+                {/* Kelompok */}
+                <select value={salesFilterKelompok} onChange={e => setSalesFilterKelompok(e.target.value)} className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-green-500">
+                  <option value="all">Semua Kelompok</option>
+                  {salesOptions.kelompoks.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-auto max-h-[60vh] rounded-xl border border-gray-700">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-800 text-gray-400 text-xs uppercase sticky top-0 z-10">
+                    <tr>
+                      {(
+                        [
+                          ['no_outlet', 'No Outlet'],
+                          ['nama_outlet', 'Nama Outlet'],
+                          ['status', 'Status'],
+                          ['me', 'ME'],
+                          ['cluster', 'Cluster'],
+                          ['kelompok', 'Kelompok'],
+                          ['target', 'Target'],
+                          ['pencapaian', 'Pencapaian'],
+                          ['pt_persen', 'P/T %'],
+                          ['pt_selisih', 'P-T'],
+                          ['t_poin', 'T Poin'],
+                          ['p_poin', 'P Poin'],
+                          ['poin_persen', 'P Poin/T Poin %'],
+                        ] as [keyof SalesReportRow, string][]
+                      ).map(([key, label]) => (
+                        <th
+                          key={key}
+                          className="px-3 py-3 text-left cursor-pointer hover:text-white select-none whitespace-nowrap"
+                          onClick={() => {
+                            if (salesSortKey === key) setSalesSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                            else { setSalesSortKey(key); setSalesSortDir('asc'); }
+                          }}
+                        >
+                          {label} {salesSortKey === key ? (salesSortDir === 'asc' ? '▲' : '▼') : ''}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {salesFiltered.map((row, idx) => {
+                      const ptColor = row.pt_persen >= 100 ? 'text-green-400' : row.pt_persen >= 80 ? 'text-yellow-400' : 'text-red-400';
+                      const poinColor = row.poin_persen >= 100 ? 'text-green-400' : row.poin_persen >= 80 ? 'text-yellow-400' : 'text-red-400';
+                      const isAktif = row.status.toLowerCase() === 'on';
+                      return (
+                        <tr key={idx} className="border-t border-gray-700 hover:bg-gray-700/40">
+                          <td className="px-3 py-2.5 text-gray-300">{row.no_outlet}</td>
+                          <td className="px-3 py-2.5 text-white font-medium whitespace-nowrap">{row.nama_outlet}</td>
+                          <td className="px-3 py-2.5">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${isAktif ? 'bg-green-900/50 text-green-300' : 'bg-gray-700 text-gray-400'}`}>
+                              {isAktif ? 'ON' : 'OFF'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-gray-300 whitespace-nowrap">{row.me}</td>
+                          <td className="px-3 py-2.5 text-gray-300">{row.cluster}</td>
+                          <td className="px-3 py-2.5 text-gray-300 whitespace-nowrap">{row.kelompok}</td>
+                          <td className="px-3 py-2.5 text-gray-300 text-right">{row.target.toLocaleString('id-ID')}</td>
+                          <td className="px-3 py-2.5 text-gray-300 text-right">{row.pencapaian.toLocaleString('id-ID')}</td>
+                          <td className={`px-3 py-2.5 text-right font-semibold ${ptColor}`}>{row.pt_persen.toFixed(1)}%</td>
+                          <td className={`px-3 py-2.5 text-right ${row.pt_selisih >= 0 ? 'text-green-400' : 'text-red-400'}`}>{row.pt_selisih.toLocaleString('id-ID')}</td>
+                          <td className="px-3 py-2.5 text-gray-300 text-right">{row.t_poin.toLocaleString('id-ID')}</td>
+                          <td className="px-3 py-2.5 text-gray-300 text-right">{row.p_poin.toLocaleString('id-ID')}</td>
+                          <td className={`px-3 py-2.5 text-right font-semibold ${poinColor}`}>{row.poin_persen.toFixed(1)}%</td>
+                        </tr>
+                      );
+                    })}
+                    {/* Summary row */}
+                    <tr className="border-t-2 border-gray-500 bg-gray-800 font-semibold text-xs">
+                      <td className="px-3 py-2.5 text-gray-400" colSpan={6}>TOTAL ({salesFiltered.length} outlet)</td>
+                      <td className="px-3 py-2.5 text-white text-right">{salesSummary.totalTarget.toLocaleString('id-ID')}</td>
+                      <td className="px-3 py-2.5 text-white text-right">{salesSummary.totalPencapaian.toLocaleString('id-ID')}</td>
+                      <td className={`px-3 py-2.5 text-right ${salesSummary.ptPersen >= 100 ? 'text-green-400' : salesSummary.ptPersen >= 80 ? 'text-yellow-400' : 'text-red-400'}`}>{salesSummary.ptPersen.toFixed(1)}%</td>
+                      <td className={`px-3 py-2.5 text-right ${salesSummary.totalPencapaian - salesSummary.totalTarget >= 0 ? 'text-green-400' : 'text-red-400'}`}>{(salesSummary.totalPencapaian - salesSummary.totalTarget).toLocaleString('id-ID')}</td>
+                      <td className="px-3 py-2.5 text-white text-right">{salesSummary.totalTPoin.toLocaleString('id-ID')}</td>
+                      <td className="px-3 py-2.5 text-white text-right">{salesSummary.totalPPoin.toLocaleString('id-ID')}</td>
+                      <td className={`px-3 py-2.5 text-right ${salesSummary.pointPersen >= 100 ? 'text-green-400' : salesSummary.pointPersen >= 80 ? 'text-yellow-400' : 'text-red-400'}`}>{salesSummary.pointPersen.toFixed(1)}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}
