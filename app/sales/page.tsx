@@ -228,62 +228,173 @@ function handleSelectProduct(product: Product) {
   setShowProductDropdown(false);
 }
 
-function calculateSimilarity(str1: string, str2: string): number {
-  const s1 = str1.toLowerCase().trim();
-  const s2 = str2.toLowerCase().trim();
-  
-  // Exact match
-  if (s1 === s2) return 100;
-  
-  // One is substring of the other (harus minimal 70% panjang)
-  if (s1.includes(s2) || s2.includes(s1)) {
-    const minLen = Math.min(s1.length, s2.length);
-    const maxLen = Math.max(s1.length, s2.length);
-    const ratio = minLen / maxLen;
-    if (ratio >= 0.7) return 85;
-  }
-  
-  // Check common words (minimal 2 kata sama atau 1 kata > 4 char)
-  const words1 = s1.split(/\s+/);
-  const words2 = s2.split(/\s+/);
-  let commonWords = 0;
-  
-  for (const w1 of words1) {
-    for (const w2 of words2) {
-      if (w1.length > 4 && w2.length > 4) {
-        // Untuk kata panjang, harus match lebih ketat
-        if (w1.startsWith(w2) || w2.startsWith(w1)) {
-          if (Math.min(w1.length, w2.length) / Math.max(w1.length, w2.length) >= 0.75) {
-            commonWords++;
-          }
+// ─── Bulk matching utilities ────────────────────────────────────────────────
+
+// Units that appear in product names but should be ignored when comparing
+const UNIT_RE = /\b(?:\d*\s*(?:mg|ml|mcg|iu|gr?|kg|l|cc|kaps?(?:ul)?|tab(?:let)?|sachet|sach|pcs|btl|botol|box|strip|amp|vial|tube|biji|unit|lembar|caps?))\b/gi;
+
+function normStr(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(UNIT_RE, '')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function wordSet(s: string): Set<string> {
+  return new Set(normStr(s).split(' ').filter(w => w.length > 1));
+}
+
+// Token recall: percentage of the user's words found in the product name
+function tokenRecall(input: string, product: string): number {
+  const inputWords = wordSet(input);
+  const productWords = wordSet(product);
+  if (inputWords.size === 0) return 0;
+  let matched = 0;
+  for (const w of inputWords) {
+    if (productWords.has(w)) {
+      matched += 1;
+    } else {
+      // Allow prefix match for abbreviations (min 3 chars, min 60% of target length)
+      let prefixHit = false;
+      for (const pw of productWords) {
+        if (pw.startsWith(w) && w.length >= 3 && w.length / pw.length >= 0.6) {
+          prefixHit = true;
+          break;
         }
-      } else if (w1.length > 3 && w1 === w2) {
-        commonWords++;
       }
+      if (prefixHit) matched += 0.8;
     }
   }
-  
-  if (commonWords >= 2) return 80;
-  if (commonWords === 1 && words1.length > 2) return 75;
-  
-  // Levenshtein-like distance (untuk typo kecil)
-  let matches = 0;
-  const longer = s1.length > s2.length ? s1 : s2;
-  const shorter = s1.length > s2.length ? s2 : s1;
-  
-  // Hanya cocokkan jika panjangnya tidak terlalu beda (max 30% beda)
-  if (Math.abs(s1.length - s2.length) / Math.max(s1.length, s2.length) > 0.3) {
-    return 0;
-  }
-  
-  for (const char of shorter) {
-    if (longer.includes(char)) matches++;
-  }
-  
-  const similarity = (matches / longer.length) * 100;
-  // Hanya return jika score tinggi (80+)
-  return similarity >= 80 ? similarity : Math.min(similarity, 70);
+  return (matched / inputWords.size) * 100;
 }
+
+// Sørensen–Dice on character trigrams — catches typos
+function trigramScore(a: string, b: string): number {
+  const tri = (s: string): Set<string> => {
+    const n = normStr(s).replace(/\s/g, '');
+    const set = new Set<string>();
+    for (let i = 0; i <= n.length - 3; i++) set.add(n.slice(i, i + 3));
+    return set;
+  };
+  const ta = tri(a);
+  const tb = tri(b);
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let inter = 0;
+  for (const t of ta) if (tb.has(t)) inter++;
+  return (2 * inter / (ta.size + tb.size)) * 100;
+}
+
+function calculateSimilarity(input: string, productName: string): number {
+  if (!input.trim()) return 0;
+  const normInput  = normStr(input);
+  const normProd   = normStr(productName);
+
+  if (normInput === normProd) return 100;
+
+  // Normalized contains (faster than token for exact sub-phrases)
+  if (normProd.includes(normInput)) {
+    const ratio = normInput.length / normProd.length;
+    return ratio >= 0.5 ? 95 : ratio >= 0.3 ? 85 : 75;
+  }
+  if (normInput.includes(normProd) && normProd.length > 3) return 88;
+
+  // Token recall (main signal) + trigram (typo tolerance)
+  const recall = tokenRecall(input, productName);
+  const tScore  = trigramScore(input, productName);
+  return Math.round(recall * 0.7 + tScore * 0.3);
+}
+
+// Satuan DOSIS/UKURAN: angka sebelumnya adalah bagian dari nama produk (bukan qty)
+const DOSAGE_UNIT = /^(?:mg|ml|mcg|iu|gr?|kg|cc|cm|mm|inch|in)$/i;
+// Satuan KUANTITAS: angka sebelumnya ADALAH qty
+const QTY_UNIT_RE = /^(?:box|pcs|btl|botol|sachet|sach|strip|tab(?:let)?|kaps?(?:ul)?|biji|unit|lembar|pak(?:et)?|dus|karton|slop|lusin|roll)$/i;
+// Regex untuk angka yang langsung menempel ke satuan kuantitas (tanpa spasi): "1box", "3btl"
+const GLUED_QTY = /(\d+)(box|pcs|btl|botol|sachet|sach|strip|tablet|kapsul|kap|biji|unit|slop|dus|pak|roll)/i;
+
+function parseBulkLine(line: string): { name: string; qty: number } | null {
+  const cleaned = line
+    .replace(/^[\s•\-*]+/, '')   // leading bullets
+    .replace(/^\d+[.)]\s+/, '')  // "1. " or "1) " numbered list
+    .replace(/[,;]+\s*$/, '')    // trailing comma or semicolon
+    .trim();
+  if (!cleaned) return null;
+
+  // Explicit × separator: "Panadol x 5"  or  "5 x Panadol"
+  const xEnd   = cleaned.match(/^(.+?)\s+[xX]\s+(\d+)\s*$/);
+  if (xEnd) return { name: xEnd[1].trim(), qty: parseInt(xEnd[2]) };
+  const xStart = cleaned.match(/^(\d+)\s*[xX]\s+(.+)$/);
+  if (xStart) return { name: xStart[2].trim(), qty: parseInt(xStart[1]) };
+
+  // Handle "1box", "3btl" — number glued to qty unit without space
+  const glued = cleaned.match(GLUED_QTY);
+  if (glued) {
+    const qty = parseInt(glued[1]);
+    const name = cleaned.replace(glued[0], '').replace(/\s+/g, ' ').trim();
+    if (name.length >= 2 && qty > 0 && qty <= 9999) return { name, qty };
+  }
+
+  // Classify all integers: dosage/size (skip) vs qty (keep)
+  const allNums: Array<{ val: number; start: number; len: number; isQty: boolean }> = [];
+  const numRe = /(\d+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = numRe.exec(cleaned)) !== null) {
+    const idx        = m.index;
+    const numStr     = m[1];
+    const charBefore = idx > 0 ? cleaned[idx - 1] : ' ';
+    const charAfter  = idx + numStr.length < cleaned.length ? cleaned[idx + numStr.length] : '';
+
+    // Skip numbers that are part of Indonesian/standard decimals: "0,75" or "0.75"
+    if (charAfter === ',' || charAfter === '.') {
+      if (/^\d/.test(cleaned.slice(idx + numStr.length + 1))) continue;
+    }
+    if (charBefore === ',' || charBefore === '.') continue;
+
+    // Skip numbers glued inside a word (e.g. "Vit-C1000")
+    if (/[a-zA-Z]/.test(charBefore)) continue;
+
+    const afterStr  = cleaned.slice(idx + numStr.length).trimStart();
+    const nextToken = afterStr.split(/[\s,]/)[0].toLowerCase().replace(/[^a-z]/g, '');
+
+    const isDosage  = DOSAGE_UNIT.test(nextToken);
+    const isQtyUnit = QTY_UNIT_RE.test(nextToken);
+
+    allNums.push({
+      val: parseInt(numStr),
+      start: idx,
+      len: numStr.length,
+      isQty: !isDosage || isQtyUnit,
+    });
+  }
+
+  if (allNums.length === 0) return null;
+
+  // Pick the last number classified as qty
+  const qtyNums = allNums.filter(n => n.isQty);
+  const chosen  = qtyNums.length > 0 ? qtyNums[qtyNums.length - 1] : allNums[allNums.length - 1];
+
+  // Remove chosen number AND any qty unit word from the name
+  let name = (cleaned.slice(0, chosen.start) + cleaned.slice(chosen.start + chosen.len))
+    .replace(/\b(?:box|pcs|btl|botol|sachet|sach|strip|tablet|kapsul|kap|biji|unit|lembar|pak|paket|dus|karton|slop|lusin|roll)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (name.length >= 2 && chosen.val > 0 && chosen.val <= 9999) {
+    return { name, qty: chosen.val };
+  }
+
+  // Fallback: first number = qty (format "5 Panadol")
+  const first = allNums[0];
+  const nameFromFirst = cleaned.slice(first.start + first.len).trim();
+  if (nameFromFirst.length >= 2 && first.val > 0 && first.val <= 9999) {
+    return { name: nameFromFirst, qty: first.val };
+  }
+
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function handleBulkAdd() {
   if (!selectedOutlet) {
@@ -293,44 +404,34 @@ function handleBulkAdd() {
 
   const lines = bulkText
     .split("\n")
-    .map((l) => l.replace(/•/g, "").trim())
-    .filter((l) => l.length > 0 && !l.toLowerCase().includes("list"));
+    .filter((l) => l.trim().length > 0 && !l.toLowerCase().includes("list"));
 
   const notFound: { name: string; qty: number; suggestions: string[] }[] = [];
+  const autocorrected: { input: string; matched: string }[] = [];
   let successCount = 0;
 
   lines.forEach((line) => {
-    // Cari angka pertama dalam kalimat
-    const qtyMatch = line.match(/\d+/);
+    const parsed = parseBulkLine(line);
+    if (!parsed) return;
 
-    if (!qtyMatch) return;
+    const { name: productName, qty } = parsed;
 
-    const qty = parseInt(qtyMatch[0]);
-
-    // Nama produk = semua sebelum angka
-    const productName = line
-      .split(qtyMatch[0])[0]
-      .trim();
-
-    // Cari produk dengan exact match dulu
+    // Exact / contains match first (normalized)
     let found = products.find((p) =>
-      p.name.toLowerCase().includes(productName.toLowerCase())
+      normStr(p.name).includes(normStr(productName)) ||
+      normStr(productName).includes(normStr(p.name))
     );
 
-    // Jika tidak ada exact match, cari dengan similarity tinggi (80%+)
+    // Fuzzy match if no exact hit
     if (!found) {
       const scored = products
-        .map((p) => ({
-          product: p,
-          score: calculateSimilarity(productName, p.name),
-        }))
-        .filter((p) => p.score >= 80)
+        .map((p) => ({ product: p, score: calculateSimilarity(productName, p.name) }))
+        .filter((p) => p.score >= 72)
         .sort((a, b) => b.score - a.score);
 
       if (scored.length > 0) {
         found = scored[0].product;
-        // Tambah notif bahwa ada autocorrection
-        showNotification(`Produk "${productName}" cocok dengan "${found.name}"`, "info");
+        autocorrected.push({ input: productName, matched: found.name });
       }
     }
 
@@ -352,6 +453,11 @@ function handleBulkAdd() {
               : item
           );
         }
+
+        if (prev.length >= MAX_FAKTUR_ITEMS) {
+          return prev; // Sudah penuh, skip item ini
+        }
+
         const discount = getDiscount(
           selectedOutlet.cluster,
           found,
@@ -375,13 +481,10 @@ function handleBulkAdd() {
       });
       successCount++;
     } else {
-      // Cari suggestions untuk produk yang tidak ditemukan (score 65-79%)
+      // Suggestions for not-found items (score 45–71)
       const suggestions = products
-        .map((p) => ({
-          name: p.name,
-          score: calculateSimilarity(productName, p.name),
-        }))
-        .filter((p) => p.score >= 65 && p.score < 80)
+        .map((p) => ({ name: p.name, score: calculateSimilarity(productName, p.name) }))
+        .filter((p) => p.score >= 45 && p.score < 72)
         .sort((a, b) => b.score - a.score)
         .slice(0, 3)
         .map((p) => p.name);
@@ -390,7 +493,15 @@ function handleBulkAdd() {
     }
   });
 
-  // Auto-add item yang tidak ditemukan sebagai custom item
+  // Show autocorrection summary (one notification, not per-item)
+  if (autocorrected.length > 0) {
+    const msg = autocorrected
+      .map((c) => `"${c.input}" → "${c.matched}"`)
+      .join('\n');
+    showNotification(`${autocorrected.length} nama dicocokkan otomatis:\n${msg}`, "info");
+  }
+
+  // Auto-add not-found items as custom items
   if (notFound.length > 0) {
     setCart((prev) => {
       const customItems = notFound.map((item) => ({
@@ -423,8 +534,19 @@ function handleBulkAdd() {
   setBulkText("");
 }
 
+const MAX_FAKTUR_ITEMS = 22;
+
 function handleAddItem() {
   if (!selectedProduct || !selectedOutlet) return;
+
+  const isExisting = cart.some(
+    (item) => !item.isCustom && item.product && item.product.id === selectedProduct.id
+  );
+
+  if (!isExisting && cart.length >= MAX_FAKTUR_ITEMS) {
+    showNotification(`Maksimal ${MAX_FAKTUR_ITEMS} item per order (1 faktur = maks ${MAX_FAKTUR_ITEMS} baris). Buat order baru untuk item selanjutnya.`, "error");
+    return;
+  }
 
   setCart((prev) => {
     const existing = prev.find(
@@ -583,6 +705,15 @@ function handleAddItem() {
     return;
   }
 
+  if (cart.length > MAX_FAKTUR_ITEMS) {
+    setResultModal({
+      type: "error",
+      title: "Terlalu Banyak Item",
+      message: `Order melebihi batas ${MAX_FAKTUR_ITEMS} item. Saat ini ada ${cart.length} item. Hapus beberapa item atau bagi menjadi 2 order terpisah.`
+    });
+    return;
+  }
+
   const itemsPayload = cart.map((item) => ({
     product_id: item.product?.id || null,
     product_name: item.isCustom ? item.customName : item.product?.name,
@@ -607,7 +738,7 @@ function handleAddItem() {
     // Parse error message untuk lebih readable - replace product ID dengan product name
     if (errorMessage.includes("Stok tidak mencukupi")) {
       // Format: "Stok tidak mencukupi: Produk ID {uuid} hanya tersedia {x} unit, diminta {y}"
-      errorMessage = errorMessage.replace(/Produk ID ([a-f0-9\-]+)/gi, (match, uuid) => {
+      errorMessage = errorMessage.replace(/Produk ID ([a-f0-9\-]+)/gi, (_match, uuid) => {
         const cartItem = cart.find(item => item.product?.id === uuid);
         const productName = cartItem?.product?.name || uuid;
         return `Produk ${productName}`;
@@ -878,6 +1009,22 @@ console.log("FILTERED:", filteredProducts.length);
             Proses Bulk
           </button>
         </div>
+
+{/* CART HEADER & ITEM COUNTER */}
+{cart.length > 0 && (
+  <div className={`flex items-center justify-between px-3 py-2 rounded-lg mb-2 text-sm font-semibold ${
+    cart.length >= MAX_FAKTUR_ITEMS
+      ? 'bg-red-100 border border-red-400 text-red-700'
+      : cart.length >= MAX_FAKTUR_ITEMS - 3
+      ? 'bg-yellow-100 border border-yellow-400 text-yellow-700'
+      : 'bg-gray-100 border border-gray-300 text-gray-600'
+  }`}>
+    <span>Keranjang</span>
+    <span>{cart.length} / {MAX_FAKTUR_ITEMS} item
+      {cart.length >= MAX_FAKTUR_ITEMS && ' — PENUH'}
+    </span>
+  </div>
+)}
 
 {/* CART */}
 {cart.map((item, index) => {

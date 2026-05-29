@@ -24,8 +24,14 @@ export function useAuth() {
         
         console.log('useAuth: checking session...', { session: session?.user?.email, error });
 
-        if (error || !session?.user) {
-          console.log('useAuth: No session found');
+        if (error) {
+          // Token expired/invalid — clear local session to stop repeated 400 errors
+          await supabase.auth.signOut({ scope: 'local' });
+          setLoading(false);
+          return;
+        }
+
+        if (!session?.user) {
           setLoading(false);
           return;
         }
