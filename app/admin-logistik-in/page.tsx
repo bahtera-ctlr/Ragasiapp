@@ -34,6 +34,7 @@ interface Invoice {
   outlet_id: string;
   amount: number;
   status: string;
+  pb?: boolean;
   logistik_in_status: string;
   packing_officer_name?: string;
   packing_notes?: string;
@@ -539,6 +540,9 @@ export default function AdminLogisticInPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {invoice.pb && (
+                      <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-purple-700 text-white tracking-widest">PB</span>
+                    )}
                     <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-blue-600 text-white">
                       Released
                     </span>

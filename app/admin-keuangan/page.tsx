@@ -297,6 +297,10 @@ export default function AdminKeuanganDashboard() {
 
   const handleReleaseInvoice = async (invoiceId: string) => {
     if (!user) return;
+    if (!modalNotes.trim()) {
+      alert('Catatan untuk Fakturis & Admin Gudang wajib diisi sebelum Release Invoice');
+      return;
+    }
 
     setReleaseLoading(true);
     try {
@@ -959,33 +963,38 @@ Generated: ${new Date().toLocaleString('id-ID')}
                           Order: {invoice.order_id?.slice(0, 8).toUpperCase()} • {formattedDate} {formattedTime}
                         </p>
                       </div>
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ml-2 ${
-                          invoice.status === 'draft'
-                            ? 'bg-gray-700 text-gray-200'
+                      <div className="flex items-center gap-1.5 ml-2">
+                        {!!invoice.pb && (
+                          <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-purple-700 text-white tracking-widest">PB</span>
+                        )}
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                            invoice.status === 'draft'
+                              ? 'bg-gray-700 text-gray-200'
+                              : invoice.status === 'posted'
+                              ? 'bg-yellow-900 text-yellow-200'
+                              : invoice.status === 'released'
+                              ? 'bg-green-900 text-green-200'
+                              : invoice.status === 'rejected'
+                              ? 'bg-red-900 text-red-200'
+                              : invoice.status === 'paid'
+                              ? 'bg-blue-900 text-blue-200'
+                              : 'bg-gray-700 text-gray-200'
+                          }`}
+                        >
+                          {invoice.status === 'draft'
+                            ? '📝 Draft'
                             : invoice.status === 'posted'
-                            ? 'bg-yellow-900 text-yellow-200'
+                            ? '⏳ Posting'
                             : invoice.status === 'released'
-                            ? 'bg-green-900 text-green-200'
+                            ? '✓ Released'
                             : invoice.status === 'rejected'
-                            ? 'bg-red-900 text-red-200'
+                            ? '✗ Rejected'
                             : invoice.status === 'paid'
-                            ? 'bg-blue-900 text-blue-200'
-                            : 'bg-gray-700 text-gray-200'
-                        }`}
-                      >
-                        {invoice.status === 'draft'
-                          ? '📝 Draft'
-                          : invoice.status === 'posted'
-                          ? '⏳ Posting'
-                          : invoice.status === 'released'
-                          ? '✓ Released'
-                          : invoice.status === 'rejected'
-                          ? '✗ Rejected'
-                          : invoice.status === 'paid'
-                          ? '💰 Paid'
-                          : 'Cancelled'}
-                      </span>
+                            ? '💰 Paid'
+                            : 'Cancelled'}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Amount Section */}
@@ -1708,12 +1717,10 @@ Generated: ${new Date().toLocaleString('id-ID')}
               </p>
             </div>
 
-            {/* Notes field - is optional for release, required for reject */}
+            {/* Notes field - wajib untuk release dan reject */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-white mb-2">
-                {modalAction === 'reject' 
-                  ? 'Alasan Penolakan *' 
-                  : 'Catatan - Untuk Fakturis & Admin Gudang'}
+                {modalAction === 'reject' ? 'Alasan Penolakan *' : 'Catatan - Untuk Fakturis & Admin Gudang *'}
               </label>
               <textarea
                 value={modalNotes}
@@ -1723,9 +1730,16 @@ Generated: ${new Date().toLocaleString('id-ID')}
                     ? 'Jelaskan alasan penolakan invoice ini...'
                     : 'Tambahkan catatan/instruksi untuk fakturis dan admin gudang...'
                 }
-                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 resize-none"
+                className={`w-full bg-gray-800 border rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none resize-none transition-colors ${
+                  !modalNotes.trim()
+                    ? 'border-red-600 focus:border-red-500'
+                    : 'border-gray-700 focus:border-blue-600'
+                }`}
                 rows={4}
               />
+              {!modalNotes.trim() && (
+                <p className="text-red-400 text-xs mt-1">Wajib diisi sebelum melanjutkan</p>
+              )}
             </div>
 
             {/* Action buttons */}
@@ -1747,7 +1761,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
                     }
                   }
                 }}
-                disabled={releaseLoading || (modalAction === 'reject' && !modalNotes.trim())}
+                disabled={releaseLoading || !modalNotes.trim()}
                 className={`flex-1 font-medium py-2 px-4 rounded-lg transition-colors text-white ${
                   modalAction === 'release'
                     ? 'bg-green-600 hover:bg-green-700 disabled:bg-gray-600'
@@ -1763,8 +1777,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
             </div>
 
             <p className="text-xs text-gray-500 mt-4 text-center">
-              * Catatan akan dikirim ke Fakturis dan Admin Gudang
-              {modalAction === 'reject' && <span className="block mt-1">Alasan penolakan WAJIB diisi</span>}
+              * Catatan wajib diisi — akan dikirim ke Fakturis dan Admin Gudang
             </p>
           </div>
         </div>

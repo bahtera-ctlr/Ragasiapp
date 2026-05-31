@@ -329,14 +329,17 @@ export default function PetugasExpedisiDashboard() {
                           Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} • NIO: {invoice.outlet?.NIO || '-'}
                         </p>
                       </div>
-                      <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-green-900 text-green-200">
-                        ✓ Siap Kirim
-                      </span>
-                      {!!invoice.shipping_request && (
-                        <div className="ml-2">
+                      <div className="flex items-center gap-1.5">
+                        {!!invoice.pb && (
+                          <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-purple-700 text-white tracking-widest">PB</span>
+                        )}
+                        <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-green-900 text-green-200">
+                          ✓ Siap Kirim
+                        </span>
+                        {!!invoice.shipping_request && (
                           <ShippingBadge shippingRequest={String(invoice.shipping_request)} size="sm" />
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
 
                     <div className="mb-3 pb-3 border-b border-gray-800 text-sm">

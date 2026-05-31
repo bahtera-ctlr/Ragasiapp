@@ -6,6 +6,7 @@ export interface DiscountRequest {
   outlet_id: string;
   product_id: string;
   discount_percentage: number;
+  quantity?: number;
   reason: string;
   start_date: string;
   end_date: string;
@@ -13,11 +14,12 @@ export interface DiscountRequest {
   approval_notes?: string;
   approved_by?: string;
   approved_at?: string;
+  invoice_id?: string;
   created_at: string;
   updated_at: string;
   // Joined data
   outlet?: { name?: string; nio?: string };
-  product?: { nama_barang?: string };
+  product?: { nama_barang?: string; harga_jual_ragasi?: number };
   marketing_user?: { name?: string; email?: string };
 }
 
@@ -85,30 +87,26 @@ export async function createDiscountRequest(
   discountPercentage: number,
   reason: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  quantity: number = 1
 ): Promise<{ data?: DiscountRequest; error?: string }> {
   try {
-    // Get current user
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return { error: 'User not authenticated' };
-    }
+    if (!user) return { error: 'User not authenticated' };
 
-    // Insert discount request
     const { data, error } = await supabase
       .from('discount_requests')
-      .insert([
-        {
-          marketing_id: user.id,
-          outlet_id: outletId,
-          product_id: productId,
-          discount_percentage: discountPercentage,
-          reason,
-          start_date: startDate,
-          end_date: endDate,
-          status: 'pending'
-        }
-      ])
+      .insert([{
+        marketing_id: user.id,
+        outlet_id: outletId,
+        product_id: productId,
+        discount_percentage: discountPercentage,
+        quantity: Math.max(1, Math.round(quantity)),
+        reason,
+        start_date: startDate,
+        end_date: endDate,
+        status: 'pending'
+      }])
       .select()
       .single();
 
@@ -140,7 +138,7 @@ export async function getDiscountRequests(): Promise<{ data?: DiscountRequest[];
       .select(`
         *,
         outlet:outlets(id, name, nio),
-        product:products(id, nama_barang)
+        product:products(id, nama_barang, harga_jual_ragasi)
       `)
       .eq('marketing_id', user.id)
       .order('created_at', { ascending: false });
@@ -374,7 +372,9 @@ export async function getAllDiscountRequests(): Promise<{ data?: DiscountRequest
 }
 
 /**
- * Approve discount request (admin only)
+ * Approve discount request (admin only).
+ * Menggunakan RPC 'approve_discount_and_create_invoice' (SECURITY DEFINER)
+ * agar bypass RLS saat membuat order + invoice.
  */
 export async function approveDiscountRequest(
   requestId: string,
@@ -382,28 +382,35 @@ export async function approveDiscountRequest(
 ): Promise<{ data?: DiscountRequest; error?: string }> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return { error: 'User not authenticated' };
+    if (!user) return { error: 'User not authenticated' };
+
+    // Panggil RPC yang menangani create order + invoice secara atomic (bypass RLS via SECURITY DEFINER)
+    const { data: rpcResult, error: rpcError } = await supabase.rpc(
+      'approve_discount_and_create_invoice',
+      {
+        p_request_id:     requestId,
+        p_approved_by:    user.id,
+        p_approval_notes: approvalNotes || null,
+      }
+    );
+
+    if (rpcError) {
+      console.error('RPC error:', rpcError);
+      return { error: rpcError.message };
     }
 
-    const { data, error } = await supabase
+    if (!rpcResult?.success) {
+      return { error: 'RPC tidak mengembalikan success' };
+    }
+
+    // Ambil data discount_request yang sudah diupdate untuk dikembalikan ke UI
+    const { data, error: fetchErr } = await supabase
       .from('discount_requests')
-      .update({
-        status: 'approved',
-        approved_by: user.id,
-        approved_at: new Date().toISOString(),
-        approval_notes: approvalNotes || null,
-        updated_at: new Date().toISOString()
-      })
+      .select('*, outlet:outlets(id, name, nio), product:products(id, nama_barang, harga_jual_ragasi)')
       .eq('id', requestId)
-      .select()
       .single();
 
-    if (error) {
-      console.error('Error approving discount request:', error);
-      return { error: error.message };
-    }
-
+    if (fetchErr) return { error: fetchErr.message };
     return { data: data as DiscountRequest };
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : 'Unknown error';

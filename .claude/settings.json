@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(sed -n '30,60p' /Users/bahterarizkyananda/Desktop/ragasiapp/app/admin-logistik-in/page.tsx)",
+      "Bash(sed -n '11,35p' /Users/bahterarizkyananda/Desktop/ragasiapp/app/fakturis/page.tsx)",
+      "Bash(sed -n '11,35p' /Users/bahterarizkyananda/Desktop/ragasiapp/app/petugas-ekspedisi/page.tsx)",
+      "Bash(sed -n '11,35p' /Users/bahterarizkyananda/Desktop/ragasiapp/app/admin-logistik-out/page.tsx)",
+      "Bash(sed -n '400,420p' /Users/bahterarizkyananda/Desktop/ragasiapp/app/fakturis/page.tsx)",
+      "Bash(sed -n '320,340p' /Users/bahterarizkyananda/Desktop/ragasiapp/app/admin-logistik-out/page.tsx)",
+      "Bash(sed -n '153,175p' /Users/bahterarizkyananda/Desktop/ragasiapp/app/petugas-ekspedisi/page.tsx)"
     ]
   }
 }

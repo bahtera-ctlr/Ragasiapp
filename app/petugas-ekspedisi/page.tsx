@@ -161,21 +161,26 @@ export default function PetugasExpedisiDashboard() {
                       Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} • NIO: {invoice.outlet?.NIO || '-'}
                     </p>
                   </div>
-                  <div className="text-right">
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${
-                        invoice.delivery_status === 'terkirim'
-                          ? 'bg-green-900 text-green-200'
-                          : 'bg-red-900 text-red-200'
-                      }`}
-                    >
-                      {invoice.delivery_status === 'terkirim' ? '✓ Terkirim' : '✗ Gagal Kirim'}
-                    </span>
-                    {!!invoice.shipping_request && (
-                      <div className="mt-2">
-                        <ShippingBadge shippingRequest={String(invoice.shipping_request)} size="sm" />
-                      </div>
+                  <div className="flex items-start gap-1.5">
+                    {!!invoice.pb && (
+                      <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-purple-700 text-white tracking-widest mt-0.5">PB</span>
                     )}
+                    <div className="text-right">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${
+                          invoice.delivery_status === 'terkirim'
+                            ? 'bg-green-900 text-green-200'
+                            : 'bg-red-900 text-red-200'
+                        }`}
+                      >
+                        {invoice.delivery_status === 'terkirim' ? '✓ Terkirim' : '✗ Gagal Kirim'}
+                      </span>
+                      {!!invoice.shipping_request && (
+                        <div className="mt-2">
+                          <ShippingBadge shippingRequest={String(invoice.shipping_request)} size="sm" />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 

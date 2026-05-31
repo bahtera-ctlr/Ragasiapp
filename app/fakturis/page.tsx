@@ -20,6 +20,7 @@ type FakturInvoice = {
   id: string;
   amount?: number;
   notes?: string;
+  pb?: boolean;
   faktur_officer_name?: string;
   faktur_notes?: string;
   outlet?: { name?: string; NIO?: string };
@@ -409,6 +410,9 @@ export default function FakturisDashboard() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {invoice.pb && (
+                      <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-purple-700 text-white tracking-widest">PB</span>
+                    )}
                     <span className="px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-green-900 text-green-200">
                       Released
                     </span>

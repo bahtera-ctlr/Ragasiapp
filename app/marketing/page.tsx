@@ -18,6 +18,7 @@ type MarketingInvoice = {
   id: string;
   amount?: number;
   notes?: string;
+  pb?: boolean;
   outlet?: { name?: string; NIO?: string };
   invoice_number?: string;
   order_created_at?: string;
@@ -50,6 +51,16 @@ type Product = {
   stok?: number;
   golongan_barang?: string;
   komposisi?: string;
+};
+
+type DiscountItem = {
+  key: string;
+  productId: string;
+  productSearch: string;
+  productData: Product | null;
+  discountPercentage: string;
+  quantity: string;
+  showDropdown: boolean;
 };
 
 type SalesReportRowMkt = {
@@ -198,14 +209,14 @@ export default function MarketingDashboard() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [selectedOutletDiscount, setSelectedOutletDiscount] = useState<string>('');
-  const [selectedProductDiscount, setSelectedProductDiscount] = useState<string>('');
   const [outletSearchDiscount, setOutletSearchDiscount] = useState('');
-  const [productSearchDiscount, setProductSearchDiscount] = useState('');
   const [showOutletDropdown, setShowOutletDropdown] = useState(false);
-  const [showProductDropdown, setShowProductDropdown] = useState(false);
   const [startDateDiscount, setStartDateDiscount] = useState('');
   const [endDateDiscount, setEndDateDiscount] = useState('');
   const [submittingDiscount, setSubmittingDiscount] = useState(false);
+  const [discountItems, setDiscountItems] = useState<DiscountItem[]>([
+    { key: '0', productId: '', productSearch: '', productData: null, discountPercentage: '', quantity: '1', showDropdown: false },
+  ]);
 
   // Pengajuan Diskon - List states
   const [discountRequests, setDiscountRequests] = useState<DiscountRequest[]>([]);
@@ -760,18 +771,25 @@ Terima kasih!
     window.open(whatsappUrl, '_blank');
   };
 
+  const resetDiscountForm = () => {
+    setSelectedOutletDiscount('');
+    setOutletSearchDiscount('');
+    setDiscountItems([{ key: '0', productId: '', productSearch: '', productData: null, discountPercentage: '', quantity: '1', showDropdown: false }]);
+    setDiscountReason('');
+    setStartDateDiscount('');
+    setEndDateDiscount('');
+  };
+
   const handleSubmitDiscountRequest = async () => {
-    // Validation
     if (!selectedOutletDiscount) {
       alert('Pilih outlet terlebih dahulu');
       return;
     }
-    if (!selectedProductDiscount) {
-      alert('Pilih barang terlebih dahulu');
-      return;
-    }
-    if (!discountPercentage || parseFloat(discountPercentage) <= 0) {
-      alert('Persentase diskon harus lebih dari 0');
+    const validItems = discountItems.filter(
+      item => item.productId && item.discountPercentage && parseFloat(item.discountPercentage) > 0
+    );
+    if (validItems.length === 0) {
+      alert('Tambah minimal 1 barang dengan diskon yang valid (> 0%)');
       return;
     }
     if (!discountReason.trim()) {
@@ -789,30 +807,26 @@ Terima kasih!
 
     setSubmittingDiscount(true);
     try {
-      const result = await createDiscountRequest(
-        selectedOutletDiscount,
-        selectedProductDiscount,
-        parseFloat(discountPercentage),
-        discountReason,
-        startDateDiscount,
-        endDateDiscount
-      );
+      const errors: string[] = [];
+      for (const item of validItems) {
+        const result = await createDiscountRequest(
+          selectedOutletDiscount,
+          item.productId,
+          parseFloat(item.discountPercentage),
+          discountReason,
+          startDateDiscount,
+          endDateDiscount,
+          parseFloat(item.quantity) || 1
+        );
+        if (result.error) errors.push(result.error);
+      }
 
-      if (result.error) {
-        alert(`Gagal mengajukan diskon: ${result.error}`);
+      if (errors.length > 0) {
+        alert(`Beberapa item gagal diajukan: ${errors.join(', ')}`);
       } else {
-        alert('Pengajuan diskon berhasil dibuat! Menunggu persetujuan admin.');
-        // Reset form
+        alert(`Pengajuan diskon berhasil untuk ${validItems.length} item! Menunggu persetujuan admin.`);
         setShowDiscountRequestModal(false);
-        setSelectedOutletDiscount('');
-        setSelectedProductDiscount('');
-        setOutletSearchDiscount('');
-        setProductSearchDiscount('');
-        setDiscountPercentage('');
-        setDiscountReason('');
-        setStartDateDiscount('');
-        setEndDateDiscount('');
-        // Refresh the discount requests list
+        resetDiscountForm();
         fetchDiscountRequests();
       }
     } catch (err) {
@@ -849,7 +863,7 @@ Terima kasih!
           {([
             { key: 'sales', label: 'Sales Pending', color: 'blue' },
             { key: 'invoices', label: 'Invoices', color: 'blue' },
-            { key: 'pengajuan-diskon', label: '💰 Diskon', color: 'purple' },
+            { key: 'pengajuan-diskon', label: '💰 Pengajuan Diskon', color: 'purple' },
             { key: 'pengajuan-limit', label: '📊 Limit', color: 'purple' },
             { key: 'data-outlet', label: '🏪 Outlet', color: 'purple' },
             { key: 'historis-pengambilan', label: '📈 Historis', color: 'purple' },
@@ -946,15 +960,20 @@ Terima kasih!
                           {invoice.outlet?.NIO && ` • NIO: ${invoice.outlet.NIO}`}
                         </p>
                       </div>
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${
-                          invoice.status === 'draft'
-                            ? 'bg-purple-900 text-purple-200'
-                            : 'bg-yellow-900 text-yellow-200'
-                        }`}
-                      >
-                        {invoice.status === 'draft' ? 'Draft' : 'Posted'}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {invoice.pb && (
+                          <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-purple-700 text-white tracking-widest">PB</span>
+                        )}
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${
+                            invoice.status === 'draft'
+                              ? 'bg-purple-900 text-purple-200'
+                              : 'bg-yellow-900 text-yellow-200'
+                          }`}
+                        >
+                          {invoice.status === 'draft' ? 'Draft' : 'Posted'}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="mb-3 pb-3 border-b border-gray-800 text-sm grid grid-cols-2 gap-4">
@@ -1123,25 +1142,30 @@ Terima kasih!
                           Order: {invoice.order_id?.slice(0, 8).toUpperCase()} • {formattedDate} {formattedTime}
                         </p>
                       </div>
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ml-2 ${
-                          invoice.status === 'released'
-                            ? 'bg-green-900 text-green-200'
+                      <div className="flex items-center gap-1.5 ml-2">
+                        {invoice.pb && (
+                          <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-purple-700 text-white tracking-widest">PB</span>
+                        )}
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                            invoice.status === 'released'
+                              ? 'bg-green-900 text-green-200'
+                              : invoice.status === 'rejected'
+                              ? 'bg-red-900 text-red-200'
+                              : invoice.status === 'paid'
+                              ? 'bg-blue-900 text-blue-200'
+                              : 'bg-gray-700 text-gray-200'
+                          }`}
+                        >
+                          {invoice.status === 'released'
+                            ? '✓ Released'
                             : invoice.status === 'rejected'
-                            ? 'bg-red-900 text-red-200'
+                            ? '✗ Rejected'
                             : invoice.status === 'paid'
-                            ? 'bg-blue-900 text-blue-200'
-                            : 'bg-gray-700 text-gray-200'
-                        }`}
-                      >
-                        {invoice.status === 'released'
-                          ? '✓ Released'
-                          : invoice.status === 'rejected'
-                          ? '✗ Rejected'
-                          : invoice.status === 'paid'
-                          ? '💰 Paid'
-                          : invoice.status}
-                      </span>
+                            ? '💰 Paid'
+                            : invoice.status}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Amount Section */}
@@ -1239,26 +1263,27 @@ Terima kasih!
                 <p className="text-gray-400 mb-6">Klik tombol "Ajukan Diskon Baru" untuk membuat pengajuan diskon</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {discountRequests.map((request) => (
-                  <div key={request.id} className="bg-gray-900 border border-gray-800 rounded-lg p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <h3 className="text-lg font-semibold text-white mb-2">
-                          {request.product?.nama_barang || 'Produk'} - {request.outlet?.name || 'Outlet'}
-                        </h3>
-                        <p className="text-gray-400 text-sm mb-1">
-                          Diskon: <span className="text-yellow-400 font-semibold">{request.discount_percentage}%</span>
-                        </p>
-                        <p className="text-gray-400 text-sm mb-1">
-                          Periode: {new Date(request.start_date).toLocaleDateString('id-ID')} - {new Date(request.end_date).toLocaleDateString('id-ID')}
-                        </p>
-                        <p className="text-gray-400 text-sm mb-2">
-                          Alasan: {request.reason}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <span className={`px-3 py-1 rounded-full text-sm font-semibold whitespace-nowrap ${
+              <div className="space-y-3">
+                {discountRequests.map((request) => {
+                  const hjr = request.product?.harga_jual_ragasi || 0;
+                  const nilaiSatuan = hjr > 0
+                    ? Math.round(hjr * (1 - request.discount_percentage / 100))
+                    : null;
+
+                  return (
+                    <div key={request.id} className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                      {/* Header */}
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <h3 className="text-base font-semibold text-white">
+                            {request.outlet?.name || 'Outlet'}
+                          </h3>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {new Date(request.start_date).toLocaleDateString('id-ID')} s/d {new Date(request.end_date).toLocaleDateString('id-ID')}
+                            {' · '}{new Date(request.created_at).toLocaleDateString('id-ID')}
+                          </p>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ml-2 ${
                           request.status === 'approved'
                             ? 'bg-green-900 text-green-200'
                             : request.status === 'rejected'
@@ -1267,24 +1292,54 @@ Terima kasih!
                         }`}>
                           {request.status === 'approved' ? '✓ Disetujui' : request.status === 'rejected' ? '✗ Ditolak' : '⏳ Menunggu'}
                         </span>
-                        <p className="text-gray-500 text-xs">
-                          {new Date(request.created_at).toLocaleDateString('id-ID')}
-                        </p>
                       </div>
+
+                      {/* Item row */}
+                      <div className="bg-gray-800 rounded-lg overflow-hidden">
+                        <div className="grid grid-cols-12 gap-2 px-3 py-1.5 text-xs text-gray-500 font-medium border-b border-gray-700">
+                          <span className="col-span-5">Nama Barang</span>
+                          <span className="col-span-2 text-center">Diskon</span>
+                          <span className="col-span-2 text-center">HJR Satuan</span>
+                          <span className="col-span-3 text-right">Nilai Net/Satuan</span>
+                        </div>
+                        <div className="grid grid-cols-12 gap-2 px-3 py-2.5 text-sm items-center">
+                          <span className="col-span-5 text-white font-medium truncate">
+                            {request.product?.nama_barang || '-'}
+                          </span>
+                          <span className="col-span-2 text-center text-yellow-400 font-bold">
+                            {request.discount_percentage}%
+                          </span>
+                          <span className="col-span-2 text-center text-gray-300 text-xs">
+                            {hjr > 0 ? `Rp ${hjr.toLocaleString('id-ID')}` : '-'}
+                          </span>
+                          <span className="col-span-3 text-right font-semibold">
+                            {nilaiSatuan !== null
+                              ? <span className="text-green-400">Rp {nilaiSatuan.toLocaleString('id-ID')}</span>
+                              : <span className="text-gray-600">—</span>
+                            }
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Alasan */}
+                      <p className="text-gray-400 text-xs mt-2">
+                        Alasan: <span className="text-gray-300">{request.reason}</span>
+                      </p>
+
+                      {/* Approval notes */}
+                      {request.status !== 'pending' && request.approval_notes && (
+                        <div className="mt-2 pt-2 border-t border-gray-800">
+                          <p className="text-xs text-gray-400 mb-1">
+                            {request.status === 'approved' ? 'Catatan Persetujuan:' : 'Alasan Penolakan:'}
+                          </p>
+                          <p className="text-xs text-gray-300 bg-gray-800 rounded px-3 py-2">
+                            {request.approval_notes}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                    
-                    {request.status !== 'pending' && request.approval_notes && (
-                      <div className="mt-4 pt-4 border-t border-gray-800">
-                        <p className="text-gray-400 text-sm mb-1">
-                          {request.status === 'approved' ? 'Catatan Persetujuan:' : 'Alasan Penolakan:'}
-                        </p>
-                        <p className="text-gray-300 text-sm bg-gray-800 rounded px-3 py-2">
-                          {request.approval_notes}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1657,14 +1712,14 @@ Terima kasih!
       {/* Pengajuan Diskon Modal */}
       {showDiscountRequestModal && (
         <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50">
-          <div className="bg-gray-900 border-t sm:border border-gray-800 rounded-t-2xl sm:rounded-2xl p-5 sm:p-8 w-full sm:max-w-md max-h-[92vh] overflow-y-auto">
+          <div className="bg-gray-900 border-t sm:border border-gray-800 rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto">
             <div className="sm:hidden w-10 h-1 bg-gray-600 rounded-full mx-auto -mt-2 mb-4" />
-            <h2 className="text-xl font-bold mb-6 text-white">Ajukan Diskon</h2>
-            
-            <div className="space-y-4 mb-6">
+            <h2 className="text-xl font-bold mb-5 text-white">Ajukan Pengajuan Diskon</h2>
+
+            <div className="space-y-4 mb-5">
               {/* Outlet Dropdown */}
               <div>
-                <label className="block text-sm font-medium text-white mb-2">Pilih Outlet *</label>
+                <label className="block text-sm font-medium text-white mb-1.5">Pilih Outlet *</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -1672,10 +1727,10 @@ Terima kasih!
                     value={outletSearchDiscount}
                     onChange={(e) => setOutletSearchDiscount(e.target.value)}
                     onFocus={() => setShowOutletDropdown(true)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600"
+                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 text-sm"
                   />
                   {showOutletDropdown && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded max-h-40 overflow-y-auto z-10">
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded max-h-40 overflow-y-auto z-20 shadow-xl">
                       {outlets
                         .filter((outlet) => {
                           const search = outletSearchDiscount.toLowerCase();
@@ -1687,7 +1742,7 @@ Terima kasih!
                         .map((outlet, idx) => (
                           <div
                             key={idx}
-                            onClick={() => {
+                            onMouseDown={() => {
                               setSelectedOutletDiscount(String(outlet.id || outlet.nio || ''));
                               setOutletSearchDiscount(`${outlet.nio} - ${outlet.name}`);
                               setShowOutletDropdown(false);
@@ -1705,85 +1760,180 @@ Terima kasih!
                 </div>
               </div>
 
-              {/* Product Dropdown */}
+              {/* Daftar Item Barang */}
               <div>
-                <label className="block text-sm font-medium text-white mb-2">Nama Barang *</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Cari barang..."
-                    value={productSearchDiscount}
-                    onChange={(e) => setProductSearchDiscount(e.target.value)}
-                    onFocus={() => setShowProductDropdown(true)}
-                    disabled={loadingProducts}
-                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 disabled:opacity-50"
-                  />
-                  {showProductDropdown && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded max-h-40 overflow-y-auto z-10">
-                      {loadingProducts ? (
-                        <div className="px-3 py-2 text-gray-400 text-sm">Loading...</div>
-                      ) : products
-                        .filter((product) => {
-                          const search = productSearchDiscount.toLowerCase();
-                          return (product.nama_barang || '').toLowerCase().includes(search);
-                        })
-                        .map((product, idx) => (
-                          <div
-                            key={idx}
-                            onClick={() => {
-                              setSelectedProductDiscount(product.id);
-                              setProductSearchDiscount(product.nama_barang);
-                              setShowProductDropdown(false);
-                            }}
-                            className="px-3 py-2 hover:bg-gray-700 cursor-pointer text-white text-sm"
-                          >
-                            {product.nama_barang}
-                          </div>
-                        ))}
-                      {!loadingProducts && products.filter((p) => p.nama_barang.toLowerCase().includes(productSearchDiscount.toLowerCase())).length === 0 && (
-                        <div className="px-3 py-2 text-gray-400 text-sm">Tidak ada barang ditemukan</div>
-                      )}
-                    </div>
-                  )}
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-sm font-medium text-white">Daftar Item Barang *</label>
+                  <button
+                    type="button"
+                    onClick={() => setDiscountItems(prev => [...prev, {
+                      key: String(Date.now()),
+                      productId: '', productSearch: '', productData: null,
+                      discountPercentage: '', quantity: '1', showDropdown: false,
+                    }])}
+                    className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
+                  >
+                    + Tambah Item
+                  </button>
+                </div>
+
+                {/* Table header — Nama Barang | HJR | Diskon% | Qty | Nilai */}
+                <div className="hidden sm:grid grid-cols-12 gap-2 mb-1 text-xs text-gray-500 font-medium px-1">
+                  <span className="col-span-3">Nama Barang</span>
+                  <span className="col-span-2">HJR</span>
+                  <span className="col-span-2 text-center">Diskon (%)</span>
+                  <span className="col-span-2 text-center">Qty</span>
+                  <span className="col-span-2 text-right">Nilai</span>
+                  <span className="col-span-1" />
+                </div>
+
+                <div className="space-y-2">
+                  {discountItems.map((item) => {
+                    const hjr = item.productData?.harga_jual_ragasi || 0;
+                    const qty = parseFloat(item.quantity) || 0;
+                    const disc = parseFloat(item.discountPercentage) || 0;
+                    const nilai = (hjr - hjr * disc / 100) * qty;
+
+                    return (
+                      <div key={item.key} className="grid grid-cols-12 gap-2 items-center">
+                        {/* Barang dropdown */}
+                        <div className="col-span-12 sm:col-span-3 relative">
+                          <input
+                            type="text"
+                            placeholder="Cari barang..."
+                            value={item.productSearch}
+                            onChange={(e) => setDiscountItems(prev => prev.map(it =>
+                              it.key === item.key ? { ...it, productSearch: e.target.value, showDropdown: true } : it
+                            ))}
+                            onFocus={() => setDiscountItems(prev => prev.map(it =>
+                              it.key === item.key ? { ...it, showDropdown: true } : it
+                            ))}
+                            disabled={loadingProducts}
+                            className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-blue-600"
+                          />
+                          {item.showDropdown && (
+                            <div className="absolute top-full left-0 right-0 mt-0.5 bg-gray-800 border border-gray-700 rounded max-h-36 overflow-y-auto z-20 shadow-xl">
+                              {loadingProducts ? (
+                                <div className="px-3 py-2 text-gray-400 text-xs">Loading...</div>
+                              ) : products
+                                .filter(p => p.nama_barang.toLowerCase().includes(item.productSearch.toLowerCase()))
+                                .slice(0, 50)
+                                .map((product) => (
+                                  <div
+                                    key={product.id}
+                                    onMouseDown={() => setDiscountItems(prev => prev.map(it =>
+                                      it.key === item.key
+                                        ? { ...it, productId: product.id, productSearch: product.nama_barang, productData: product, showDropdown: false }
+                                        : it
+                                    ))}
+                                    className="px-3 py-1.5 hover:bg-gray-700 cursor-pointer text-xs"
+                                  >
+                                    <span className="text-white">{product.nama_barang}</span>
+                                    {product.harga_jual_ragasi && (
+                                      <span className="text-blue-400 ml-2">Rp {product.harga_jual_ragasi.toLocaleString('id-ID')}</span>
+                                    )}
+                                  </div>
+                                ))}
+                              {!loadingProducts && products.filter(p => p.nama_barang.toLowerCase().includes(item.productSearch.toLowerCase())).length === 0 && (
+                                <div className="px-3 py-2 text-gray-400 text-xs">Tidak ditemukan</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* HJR — inline, langsung setelah nama barang */}
+                        <div className="col-span-4 sm:col-span-2">
+                          <span className={`text-xs font-medium ${hjr > 0 ? 'text-blue-400' : 'text-gray-600'}`}>
+                            {hjr > 0 ? `Rp ${hjr.toLocaleString('id-ID')}` : '—'}
+                          </span>
+                        </div>
+
+                        {/* Diskon % */}
+                        <div className="col-span-3 sm:col-span-2">
+                          <input
+                            type="number"
+                            placeholder="%"
+                            min="0"
+                            max="100"
+                            value={item.discountPercentage}
+                            onChange={(e) => setDiscountItems(prev => prev.map(it =>
+                              it.key === item.key ? { ...it, discountPercentage: e.target.value } : it
+                            ))}
+                            className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-white text-sm text-center focus:outline-none focus:border-blue-600"
+                          />
+                        </div>
+
+                        {/* Qty */}
+                        <div className="col-span-2 sm:col-span-2">
+                          <input
+                            type="number"
+                            placeholder="Qty"
+                            min="1"
+                            value={item.quantity}
+                            onChange={(e) => setDiscountItems(prev => prev.map(it =>
+                              it.key === item.key ? { ...it, quantity: e.target.value } : it
+                            ))}
+                            className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-white text-sm text-center focus:outline-none focus:border-blue-600"
+                          />
+                        </div>
+
+                        {/* Nilai = (HJR − HJR × disc%) × Qty */}
+                        <div className="col-span-2 sm:col-span-2 text-right">
+                          {nilai > 0 ? (
+                            <span className="text-green-400 text-xs font-semibold whitespace-nowrap">
+                              Rp {Math.round(nilai).toLocaleString('id-ID')}
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 text-xs">—</span>
+                          )}
+                        </div>
+
+                        {/* Remove */}
+                        <div className="col-span-1 flex items-center justify-center">
+                          {discountItems.length > 1 && (
+                            <button
+                              type="button"
+                              onMouseDown={() => setDiscountItems(prev => prev.filter(it => it.key !== item.key))}
+                              className="text-red-400 hover:text-red-300 text-xl leading-none"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
+              {/* Alasan */}
               <div>
-                <label className="block text-sm font-medium text-white mb-2">Persentase Diskon (%) *</label>
-                <input
-                  type="number"
-                  placeholder="Contoh: 5, 10, 15"
-                  value={discountPercentage}
-                  onChange={(e) => setDiscountPercentage(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-white mb-2">Alasan Diskon *</label>
+                <label className="block text-sm font-medium text-white mb-1.5">Alasan Pengajuan *</label>
                 <textarea
                   placeholder="Jelaskan alasan pengajuan diskon..."
                   value={discountReason}
                   onChange={(e) => setDiscountReason(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 resize-none"
-                  rows={3}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 resize-none text-sm"
+                  rows={2}
                 />
               </div>
 
+              {/* Periode */}
               <div>
-                <label className="block text-sm font-medium text-white mb-2">Periode Berlaku *</label>
+                <label className="block text-sm font-medium text-white mb-1.5">Periode Berlaku *</label>
                 <div className="flex gap-2">
                   <input
                     type="date"
                     value={startDateDiscount}
                     onChange={(e) => setStartDateDiscount(e.target.value)}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-600"
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
                   />
+                  <span className="text-gray-500 self-center text-sm">s/d</span>
                   <input
                     type="date"
                     value={endDateDiscount}
                     onChange={(e) => setEndDateDiscount(e.target.value)}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-600"
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
                   />
                 </div>
               </div>
@@ -1791,17 +1941,7 @@ Terima kasih!
 
             <div className="flex gap-3">
               <button
-                onClick={() => {
-                  setShowDiscountRequestModal(false);
-                  setSelectedOutletDiscount('');
-                  setSelectedProductDiscount('');
-                  setOutletSearchDiscount('');
-                  setProductSearchDiscount('');
-                  setDiscountPercentage('');
-                  setDiscountReason('');
-                  setStartDateDiscount('');
-                  setEndDateDiscount('');
-                }}
+                onClick={() => { setShowDiscountRequestModal(false); resetDiscountForm(); }}
                 disabled={submittingDiscount}
                 className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
               >
@@ -1812,7 +1952,7 @@ Terima kasih!
                 disabled={submittingDiscount}
                 className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
               >
-                {submittingDiscount ? 'Sedang Mengajukan...' : 'Ajukan'}
+                {submittingDiscount ? 'Mengajukan...' : `Ajukan ${discountItems.filter(i => i.productId).length > 0 ? `(${discountItems.filter(i => i.productId).length} item)` : ''}`}
               </button>
             </div>
           </div>
