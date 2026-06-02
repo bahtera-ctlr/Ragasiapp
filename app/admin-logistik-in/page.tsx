@@ -7,7 +7,7 @@ import { getReleasedInvoices, updateInvoicePackingStatus } from '@/lib/orders';
 import { getEmployees, Employee } from '@/lib/employees';
 import { PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
-import { jsPDF } from 'jspdf';
+import { generateInvoicePDF } from '@/lib/invoice-pdf';
 
 interface InvoiceItem {
   product_name?: string;
@@ -30,6 +30,7 @@ interface InvoiceItem {
 interface Invoice {
   id: string;
   invoice_number: string;
+  faktur_number?: string;
   order_id: string;
   outlet_id: string;
   amount: number;
@@ -322,104 +323,14 @@ export default function AdminLogisticInPage() {
 
   const getInvoiceHeaderTitle = (invoice: Invoice) => {
     const outletName = invoice.outlet?.name || 'Outlet Tidak Diketahui';
-    const orderLabel = invoice.invoice_number || formatOrderId(invoice.order_id);
-    return `${outletName} - ${orderLabel}`;
+    if (invoice.faktur_number) return `${outletName} — ${invoice.faktur_number}`;
+    return outletName;
   };
 
   const handleDownloadInvoicePDF = (invoice: Invoice) => {
-    const items = parseInvoiceItems(invoice);
-    if (!items || items.length === 0) {
-      alert('Invoice ini belum memiliki detail barang. Pastikan order sudah berisi item.');
-      return;
-    }
-
-    try {
-      const outlet = invoice.outlet || ({} as { name?: string; me?: string; nio?: string });
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      let yPosition = 20;
-      const margin = 15;
-      const lineHeight = 7;
-
-      pdf.setFontSize(16);
-      pdf.setFont('', 'bold');
-      pdf.text('INVOICE LOGISTIK', margin, yPosition);
-      yPosition += lineHeight + 4;
-
-      pdf.setFontSize(10);
-      pdf.setFont('', 'normal');
-      pdf.text(`Outlet: ${outlet.name || 'N/A'}`, margin, yPosition);
-      yPosition += lineHeight;
-      pdf.text(`ME: ${outlet.me || 'N/A'}`, margin, yPosition);
-      yPosition += lineHeight;
-      pdf.text(`Order ID: ${formatOrderId(invoice.order_id)}`, margin, yPosition);
-      yPosition += lineHeight;
-      pdf.text(`Tanggal: ${formatDate(invoice.released_at)}`, margin, yPosition);
-      yPosition += lineHeight + 2;
-
-      pdf.setDrawColor(0);
-      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 6;
-
-      pdf.setFontSize(11);
-      pdf.setFont('', 'bold');
-      pdf.text('DETAIL BARANG', margin, yPosition);
-      yPosition += lineHeight + 2;
-
-      pdf.setFontSize(9);
-      pdf.setFont('', 'bold');
-      const col1 = margin;
-      const col2 = margin + 70;
-      const col3 = pageWidth - margin - 35;
-      const col4 = pageWidth - margin;
-      pdf.text('No', col1, yPosition);
-      pdf.text('Produk', col2, yPosition);
-      pdf.text('Qty', col3, yPosition, { align: 'right' });
-      pdf.text('Subtotal', col4, yPosition, { align: 'right' });
-      yPosition += lineHeight;
-      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 4;
-
-      pdf.setFont('', 'normal');
-      let total = 0;
-      items.forEach((item: InvoiceItem, idx: number) => {
-        const itemName = item.product_name || item.nama_barang || item.name || item.customName || item.product?.name || 'Unknown';
-        const qty = item.qty || item.quantity || 0;
-        const price = item.price || item.harga || item.product?.price || item.customPrice || 0;
-        const subtotal = item.subtotal || qty * price;
-        total += subtotal;
-
-        const nameLines = pdf.splitTextToSize(itemName, 70);
-        const rowHeight = Math.max(nameLines.length * 4, lineHeight);
-
-        if (yPosition + rowHeight > 280) {
-          pdf.addPage();
-          yPosition = 20;
-        }
-
-        pdf.setFontSize(9);
-        pdf.text(`${idx + 1}`, col1, yPosition);
-        nameLines.forEach((line: string, lineIndex: number) => {
-          pdf.text(line, col2, yPosition + lineIndex * 4);
-        });
-        pdf.text(`${qty}`, col3, yPosition, { align: 'right' });
-        pdf.text(`Rp ${subtotal.toLocaleString('id-ID')}`, col4, yPosition, { align: 'right' });
-        yPosition += rowHeight;
-      });
-
-      yPosition += 4;
-      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 6;
-      pdf.setFont('', 'bold');
-      pdf.text(`TOTAL: Rp ${total.toLocaleString('id-ID')}`, pageWidth - margin, yPosition, { align: 'right' });
-
-      const fileName = `INVOICE_${outlet.name || 'OUTLET'}_${formatOrderId(invoice.order_id)}.pdf`;
-      pdf.save(fileName.replace(/\s+/g, '_'));
-    } catch (err) {
-      console.error('Error generating invoice PDF:', err);
-      alert('Gagal membuat PDF invoice.');
-    }
+    generateInvoicePDF(invoice as unknown as Parameters<typeof generateInvoicePDF>[0]);
   };
+
 
   const formatDate = (dateString: string) => {
     if (!dateString) return '';

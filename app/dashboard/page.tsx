@@ -131,10 +131,19 @@ export default function Dashboard() {
 
     if (role === 'super_admin' || role === 'admin_ekspedisi') {
       modules.push({
-        name: 'Admin Logistik (Keluar)',
+        name: 'Admin Ekspedisi',
         path: '/admin-logistik-out',
-        icon: '📤',
-        description: 'Outbound logistics'
+        icon: '🚚',
+        description: 'Kelola pengiriman & ekspedisi'
+      });
+    }
+
+    if (role === 'petugas_ekspedisi') {
+      modules.push({
+        name: 'Ekspedisi',
+        path: '/petugas-ekspedisi',
+        icon: '📦',
+        description: 'Lihat riwayat pengiriman'
       });
     }
 

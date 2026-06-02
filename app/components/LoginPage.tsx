@@ -110,7 +110,7 @@ export default function LoginPage() {
         marketing: '/marketing',
         fakturis: '/fakturis',
         admin_logistik: '/admin-logistik-in',
-        admin_ekspedisi: '/admin-logistik-in',
+        admin_ekspedisi: '/admin-logistik-out',
         petugas_ekspedisi: '/petugas-ekspedisi',
         super_admin: '/admin-super',
       };

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getInvoices, updateInvoiceFakturStatus } from '@/lib/orders';
+import { generateInvoicePDF } from '@/lib/invoice-pdf';
 import { getEmployees, Employee } from '@/lib/employees';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
@@ -23,6 +24,7 @@ type FakturInvoice = {
   pb?: boolean;
   faktur_officer_name?: string;
   faktur_notes?: string;
+  faktur_number?: string;
   outlet?: { name?: string; NIO?: string };
   outlet_id?: string;
   outlet_name?: string;
@@ -60,6 +62,7 @@ export default function FakturisDashboard() {
   const [fakturOfficerSearch, setFakturOfficerSearch] = useState('');
   const [showFakturDropdown, setShowFakturDropdown] = useState(false);
   const [fakturNotes, setFakturNotes] = useState('');
+  const [fakturNumber, setFakturNumber] = useState('');
   const [savingFaktur, setSavingFaktur] = useState(false);
   const [fakturError, setFakturError] = useState('');
 
@@ -263,6 +266,7 @@ export default function FakturisDashboard() {
     setFakturOfficerSearch(invoice.faktur_officer_name || '');
     setShowFakturDropdown(false);
     setFakturNotes(invoice.faktur_notes || '');
+    setFakturNumber(invoice.faktur_number || '');
     setFakturError('');
     setImageError('');
     setShowFakturModal(true);
@@ -277,6 +281,7 @@ export default function FakturisDashboard() {
     setFakturOfficerSearch('');
     setShowFakturDropdown(false);
     setFakturNotes('');
+    setFakturNumber('');
     setFakturError('');
     setImageError('');
     setFakturImages([]);
@@ -289,6 +294,10 @@ export default function FakturisDashboard() {
       setFakturError('Nama petugas fakturis wajib diisi');
       return;
     }
+    if (!fakturNumber.trim()) {
+      setFakturError('Nomor faktur Zahir wajib diisi');
+      return;
+    }
 
     try {
       setSavingFaktur(true);
@@ -296,7 +305,8 @@ export default function FakturisDashboard() {
         selectedInvoice.id,
         fakturOfficerName,
         fakturNotes,
-        user.id
+        user.id,
+        fakturNumber.trim()
       );
 
       if (error) {
@@ -403,7 +413,10 @@ export default function FakturisDashboard() {
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
                     <h3 className="text-base font-semibold text-white">
-                      {String(invoice.outlet?.name || invoice.outlet_id)}
+                      {invoice.outlet?.name || invoice.outlet_id}
+                      {invoice.faktur_number && (
+                        <span className="text-yellow-400"> — {invoice.faktur_number}</span>
+                      )}
                     </h3>
                     <p className="text-xs text-gray-400 mt-1">
                       {invoice.order_id?.slice(0, 8).toUpperCase() || invoice.id.slice(0, 8)} • {invoice.outlet?.NIO ? `NIO: ${invoice.outlet.NIO}` : `Outlet: ${String(invoice.outlet_id)}`}
@@ -492,6 +505,14 @@ export default function FakturisDashboard() {
                     <div>{invoice.notes}</div>
                   </div>
                 )}
+
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); generateInvoicePDF(invoice); }}
+                  className="mt-3 w-full flex items-center justify-center gap-2 bg-blue-900 hover:bg-blue-800 text-blue-200 text-xs font-medium py-2 px-3 rounded-lg transition-colors"
+                >
+                  📄 Download PDF Faktur
+                </button>
               </button>
             ))}
           </div>
@@ -629,6 +650,19 @@ export default function FakturisDashboard() {
                     )}
                   </>
                 )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  Nomor Faktur Zahir <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={fakturNumber}
+                  onChange={(e) => setFakturNumber(e.target.value)}
+                  placeholder="Masukkan nomor faktur dari Zahir..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                />
               </div>
 
               <div>

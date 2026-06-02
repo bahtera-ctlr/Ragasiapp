@@ -819,7 +819,8 @@ export async function updateInvoiceFakturStatus(
   invoiceId: string,
   fakturOfficerName: string,
   fakturNotes: string,
-  verifiedBy: string
+  verifiedBy: string,
+  fakturNumber?: string
 ) {
   try {
     const { data, error } = await supabase
@@ -828,6 +829,7 @@ export async function updateInvoiceFakturStatus(
         faktur_status: 'terfaktur',
         faktur_officer_name: fakturOfficerName,
         faktur_notes: fakturNotes,
+        faktur_number: fakturNumber || null,
         faktur_verified_by: verifiedBy,
         faktur_verified_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -1060,5 +1062,78 @@ export async function getCompletedShipments() {
   } catch (error) {
     console.error('Error in getCompletedShipments:', error);
     return { error: String(error), data: null };
+  }
+}
+
+// ─── Admin Data Management ───────────────────────────────────────────────────
+
+export async function getAllInvoicesForAdmin() {
+  try {
+    const { data: invoicesData, error } = await supabase
+      .from('invoices')
+      .select('id, outlet_id, amount, status, faktur_status, faktur_number, shipment_status, delivery_status, created_at, released_at')
+      .order('created_at', { ascending: false });
+
+    if (error) return { error: error.message, data: null };
+
+    const outletIds = [...new Set((invoicesData || []).map(inv => inv.outlet_id))];
+    const { data: outletsData } = await supabase
+      .from('outlets')
+      .select('id, name, NIO')
+      .in('id', outletIds);
+
+    const outletMap = new Map((outletsData || []).map(o => [o.id, o]));
+    const enriched = (invoicesData || []).map(inv => ({
+      ...inv,
+      outlet: outletMap.get(inv.outlet_id) || null,
+    }));
+
+    return { data: enriched, error: null };
+  } catch (error) {
+    return { error: String(error), data: null };
+  }
+}
+
+export async function deleteInvoice(invoiceId: string) {
+  try {
+    const { error } = await supabase.from('invoices').delete().eq('id', invoiceId);
+    return { error: error?.message || null };
+  } catch (error) {
+    return { error: String(error) };
+  }
+}
+
+export async function deleteAllInvoices() {
+  try {
+    const { error } = await supabase.from('invoices').delete().not('id', 'is', null);
+    return { error: error?.message || null };
+  } catch (error) {
+    return { error: String(error) };
+  }
+}
+
+export async function deleteDeliveryData(invoiceId: string) {
+  try {
+    const { error } = await supabase
+      .from('invoices')
+      .update({
+        delivery_status: null,
+        delivery_date: null,
+        delivery_notes: null,
+        shipment_status: 'ready',
+        expedisi_officer_name: null,
+        shipment_plan: null,
+        shipment_date: null,
+        shipment_verified_by: null,
+        shipment_verified_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', invoiceId);
+    if (error) return { error: error.message };
+
+    await supabase.from('delivery_images').delete().eq('invoice_id', invoiceId);
+    return { error: null };
+  } catch (error) {
+    return { error: String(error) };
   }
 }

@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getReadyToShipInvoices, getPlannedShipments, getCompletedShipments, planShipment, updateShipmentDelivery } from '@/lib/orders';
+import { uploadDeliveryImage, getDeliveryImages, type DeliveryImage } from '@/lib/delivery-images';
 import { useAuth, useRoleCheck } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
@@ -20,13 +21,20 @@ type LogisticsInvoice = {
   shipment_status?: string;
   status?: string;
   shipping_request?: unknown;
+  faktur_number?: string;
   [key: string]: unknown;
+};
+
+const getInvoiceTitle = (invoice: LogisticsInvoice): string => {
+  const outlet = invoice.outlet?.name || invoice.outlet_id || '-';
+  if (invoice.faktur_number) return `${outlet} — ${invoice.faktur_number}`;
+  return outlet;
 };
 
 export default function PetugasExpedisiDashboard() {
   const router = useRouter();
   const { user, loading } = useAuth();
-  const { hasAccess } = useRoleCheck(['petugas_ekspedisi', 'super_admin']);
+  const { hasAccess } = useRoleCheck(['admin_ekspedisi', 'super_admin']);
 
   const [tab, setTab] = useState<'ready' | 'planned' | 'completed'>('completed');
   const [readyToShip, setReadyToShip] = useState<LogisticsInvoice[]>([]);
@@ -50,9 +58,26 @@ export default function PetugasExpedisiDashboard() {
   // Delivery modal states
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [deliveryStatus, setDeliveryStatus] = useState<'terkirim' | 'gagal_kirim'>('terkirim');
-  const [deliveryNotes, setDeliveryNotes] = useState('');
   const [deliveryError, setDeliveryError] = useState('');
   const [savingDelivery, setSavingDelivery] = useState(false);
+  const [deliveryPhoto, setDeliveryPhoto] = useState<File | null>(null);
+  const [deliveryPhotoPreview, setDeliveryPhotoPreview] = useState<string | null>(null);
+  // Catatan terstruktur
+  const [penerima, setPenerima] = useState('');
+  const [diCek, setDiCek] = useState(false);
+  const [nomorFaktur, setNomorFaktur] = useState('');
+  const [kemasanQ, setKemasanQ] = useState('');
+  const [kemasanK, setKemasanK] = useState('');
+
+  // Completed tab photo viewer
+  const [completedPhotos, setCompletedPhotos] = useState<Record<string, DeliveryImage[]>>({});
+  const [loadingPhotos, setLoadingPhotos] = useState<Record<string, boolean>>({});
+  const [expandedPhotos, setExpandedPhotos] = useState<Record<string, boolean>>({});
+
+  // Camera modal
+  const [showCameraModal, setShowCameraModal] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -165,48 +190,187 @@ export default function PetugasExpedisiDashboard() {
     }
   };
 
+  const resetDeliveryForm = () => {
+    setDeliveryStatus('terkirim');
+    setDeliveryError('');
+    setDeliveryPhoto(null);
+    setDeliveryPhotoPreview(null);
+    setPenerima('');
+    setDiCek(false);
+    setNomorFaktur('');
+    setKemasanQ('');
+    setKemasanK('');
+  };
+
   const openDeliveryModal = (invoice: LogisticsInvoice) => {
     setSelectedInvoice(invoice);
-    setDeliveryStatus('terkirim');
-    setDeliveryNotes('');
-    setDeliveryError('');
+    resetDeliveryForm();
     setShowDeliveryModal(true);
   };
 
   const closeDeliveryModal = () => {
     setShowDeliveryModal(false);
     setSelectedInvoice(null);
-    setDeliveryStatus('terkirim');
-    setDeliveryNotes('');
+    resetDeliveryForm();
+  };
+
+  const compressImage = (file: File, maxMB: number = 1): Promise<File> =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+        let { width, height } = img;
+        const maxDim = 1920;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) { height = Math.round((height * maxDim) / width); width = maxDim; }
+          else { width = Math.round((width * maxDim) / height); height = maxDim; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        const maxBytes = maxMB * 1024 * 1024;
+        const tryQ = (q: number) => {
+          canvas.toBlob((blob) => {
+            if (!blob) return reject(new Error('Gagal kompres gambar'));
+            if (blob.size <= maxBytes || q <= 0.1) {
+              resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+            } else {
+              tryQ(Math.round((q - 0.1) * 10) / 10);
+            }
+          }, 'image/jpeg', q);
+        };
+        tryQ(0.85);
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+
+  const handleDeliveryPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
     setDeliveryError('');
+    try {
+      const compressed = await compressImage(file, 1);
+      setDeliveryPhoto(compressed);
+      const reader = new FileReader();
+      reader.onloadend = () => setDeliveryPhotoPreview(reader.result as string);
+      reader.readAsDataURL(compressed);
+    } catch {
+      setDeliveryError('Gagal memproses gambar, coba pilih foto lain');
+    }
   };
 
   const handleUpdateDelivery = async () => {
     if (!selectedInvoice || !user) return;
 
+    if (!deliveryPhoto) {
+      setDeliveryError('Foto bukti pengiriman wajib dilampirkan');
+      return;
+    }
+
     try {
       setSavingDelivery(true);
+
+      const notesPayload = JSON.stringify({
+        penerima: penerima.trim(),
+        di_cek: diCek,
+        nomor_faktur: nomorFaktur.trim(),
+        kemasan_q: kemasanQ ? Number(kemasanQ) : 0,
+        kemasan_k: kemasanK ? Number(kemasanK) : 0,
+      });
+
       const { data, error } = await updateShipmentDelivery(
         selectedInvoice.id,
         deliveryStatus,
-        deliveryNotes
+        notesPayload
       );
 
       if (error) {
         setDeliveryError(error);
-      } else {
-        console.log('Delivery updated:', data);
-        setPlannedShipments(plannedShipments.filter(inv => inv.id !== selectedInvoice.id));
-        closeDeliveryModal();
-        alert('Status pengiriman berhasil diupdate!');
-        fetchData();
+        return;
       }
+
+      const { error: photoError } = await uploadDeliveryImage(
+        deliveryPhoto,
+        selectedInvoice.id,
+        user.id
+      );
+
+      if (photoError) {
+        setDeliveryError(`Status berhasil disimpan, tapi foto gagal diupload: ${photoError}`);
+        return;
+      }
+
+      console.log('Delivery updated:', data);
+      setPlannedShipments(plannedShipments.filter(inv => inv.id !== selectedInvoice.id));
+      closeDeliveryModal();
+      alert('Status pengiriman & foto bukti berhasil disimpan!');
+      fetchData();
     } catch (err) {
       console.error('Error:', err);
       setDeliveryError(String(err));
     } finally {
       setSavingDelivery(false);
     }
+  };
+
+  const openCamera = async () => {
+    setDeliveryError('');
+    setShowCameraModal(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+    } catch {
+      setDeliveryError('Tidak bisa akses kamera. Pastikan izin kamera sudah diberikan.');
+      setShowCameraModal(false);
+    }
+  };
+
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    setShowCameraModal(false);
+  };
+
+  const capturePhoto = async () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    canvas.getContext('2d')!.drawImage(videoRef.current, 0, 0);
+    canvas.toBlob(async (blob) => {
+      if (!blob) return;
+      stopCamera();
+      const file = new File([blob], `foto-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      try {
+        const compressed = await compressImage(file, 1);
+        setDeliveryPhoto(compressed);
+        const reader = new FileReader();
+        reader.onloadend = () => setDeliveryPhotoPreview(reader.result as string);
+        reader.readAsDataURL(compressed);
+      } catch {
+        setDeliveryError('Gagal memproses foto kamera');
+      }
+    }, 'image/jpeg', 0.92);
+  };
+
+  const toggleDeliveryPhotos = async (invoiceId: string) => {
+    if (expandedPhotos[invoiceId]) {
+      setExpandedPhotos(prev => ({ ...prev, [invoiceId]: false }));
+      return;
+    }
+    setExpandedPhotos(prev => ({ ...prev, [invoiceId]: true }));
+    if (completedPhotos[invoiceId]) return;
+    setLoadingPhotos(prev => ({ ...prev, [invoiceId]: true }));
+    const { data } = await getDeliveryImages(invoiceId);
+    setCompletedPhotos(prev => ({ ...prev, [invoiceId]: data || [] }));
+    setLoadingPhotos(prev => ({ ...prev, [invoiceId]: false }));
   };
 
   const handleLogout = async () => {
@@ -323,7 +487,7 @@ export default function PetugasExpedisiDashboard() {
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1">
                         <h3 className="text-base font-semibold text-white">
-                          {invoice.outlet?.name || invoice.outlet_id}
+                          {getInvoiceTitle(invoice)}
                         </h3>
                         <p className="text-xs text-gray-400 mt-1">
                           Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} • NIO: {invoice.outlet?.NIO || '-'}
@@ -410,7 +574,7 @@ export default function PetugasExpedisiDashboard() {
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1">
                         <h3 className="text-base font-semibold text-white">
-                          {invoice.outlet?.name || invoice.outlet_id}
+                          {getInvoiceTitle(invoice)}
                         </h3>
                         <p className="text-xs text-gray-400 mt-1">
                           Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} • Rencana: {new Date(String(invoice.shipment_date)).toLocaleDateString('id-ID')}
@@ -504,7 +668,7 @@ export default function PetugasExpedisiDashboard() {
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1">
                         <h3 className="text-base font-semibold text-white">
-                          {invoice.outlet?.name || invoice.outlet_id}
+                          {getInvoiceTitle(invoice)}
                         </h3>
                         <p className="text-xs text-gray-400 mt-1">
                           Order ID: {invoice.order_id?.slice(0, 8).toUpperCase()} • Status: {String(invoice.delivery_status)}
@@ -564,16 +728,81 @@ export default function PetugasExpedisiDashboard() {
                       </div>
                     </div>
 
-                    {invoice.delivery_notes != null && (
-  <div className="bg-gray-800 rounded p-3 mb-2 text-sm">
-    <p className="text-gray-400 mb-1">Catatan:</p>
-    <p className="text-gray-300">
-      {typeof invoice.delivery_notes === 'string' 
-        ? invoice.delivery_notes 
-        : JSON.stringify(invoice.delivery_notes)}
-    </p>
-  </div>
-)}
+                    {invoice.delivery_notes != null && (() => {
+                      type ParsedNotes = { penerima?: string; di_cek?: boolean; nomor_faktur?: string; kemasan_q?: number; kemasan_k?: number };
+                      let parsed: ParsedNotes | null = null;
+                      try { parsed = JSON.parse(String(invoice.delivery_notes)) as ParsedNotes; } catch { /* plain text */ }
+                      return parsed ? (
+                        <div className="bg-gray-800 rounded-lg p-3 mb-2 text-sm space-y-1.5">
+                          {parsed.penerima && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Penerima</span>
+                              <span className="text-white font-medium">{String(parsed.penerima)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">Di Cek</span>
+                            <span className={`font-medium ${parsed.di_cek ? 'text-green-400' : 'text-red-400'}`}>
+                              {parsed.di_cek ? 'Iya' : 'Tidak'}
+                            </span>
+                          </div>
+                          {parsed.nomor_faktur && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">No. Faktur</span>
+                              <span className="text-white font-medium">{String(parsed.nomor_faktur)}</span>
+                            </div>
+                          )}
+                          {(Number(parsed.kemasan_q) > 0 || Number(parsed.kemasan_k) > 0) && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Kemasan</span>
+                              <span className="text-white font-medium">
+                                {Number(parsed.kemasan_q) > 0 && <span className="text-yellow-400">{String(parsed.kemasan_q)}Q </span>}
+                                {Number(parsed.kemasan_k) > 0 && <span className="text-blue-400">{String(parsed.kemasan_k)}K</span>}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="bg-gray-800 rounded p-3 mb-2 text-sm">
+                          <p className="text-gray-400 mb-1">Catatan:</p>
+                          <p className="text-gray-300">{String(invoice.delivery_notes)}</p>
+                        </div>
+                      );
+                    })()}
+
+                    <button
+                      onClick={() => toggleDeliveryPhotos(invoice.id)}
+                      className="w-full mt-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 px-4 rounded-lg transition-colors"
+                    >
+                      {expandedPhotos[invoice.id] ? '▲ Sembunyikan Foto' : '📷 Lihat Foto Bukti'}
+                    </button>
+
+                    {expandedPhotos[invoice.id] && (
+                      <div className="mt-3">
+                        {loadingPhotos[invoice.id] ? (
+                          <p className="text-gray-400 text-sm text-center py-2">Memuat foto...</p>
+                        ) : completedPhotos[invoice.id]?.length > 0 ? (
+                          <div className="grid grid-cols-2 gap-2">
+                            {completedPhotos[invoice.id].map((img) => (
+                              <a
+                                key={img.id}
+                                href={img.public_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <img
+                                  src={img.public_url}
+                                  alt="Foto bukti pengiriman"
+                                  className="w-full h-32 object-cover rounded border border-gray-700 hover:opacity-80 transition-opacity"
+                                />
+                              </a>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-gray-500 text-sm text-center py-2">Tidak ada foto tersimpan</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -680,15 +909,136 @@ export default function PetugasExpedisiDashboard() {
 
               <div>
                 <label className="block text-sm font-semibold mb-2">
-                  Catatan (Optional)
+                  Foto Bukti Pengiriman <span className="text-red-500">*</span>
                 </label>
-                <textarea
-                  value={deliveryNotes}
-                  onChange={(e) => setDeliveryNotes(e.target.value)}
-                  placeholder="Masukkan catatan pengiriman..."
-                  rows={3}
-                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 resize-none"
+                {/* Hidden input galeri */}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleDeliveryPhotoChange}
+                  className="hidden"
+                  id="delivery-gallery-input"
                 />
+
+                {deliveryPhotoPreview ? (
+                  <div className="space-y-3">
+                    <img
+                      src={deliveryPhotoPreview}
+                      alt="Preview foto pengiriman"
+                      className="w-full max-h-52 object-contain rounded-lg border border-gray-700"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={openCamera}
+                        className="flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
+                      >
+                        📷 Ambil Ulang
+                      </button>
+                      <label
+                        htmlFor="delivery-gallery-input"
+                        className="cursor-pointer flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
+                      >
+                        🖼️ Ganti Galeri
+                      </label>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={openCamera}
+                      className="flex items-center justify-center gap-2 border border-gray-600 hover:border-blue-500 hover:bg-gray-800 rounded-lg py-2.5 text-sm font-medium text-gray-300 transition-colors"
+                    >
+                      📷 Kamera
+                    </button>
+                    <label
+                      htmlFor="delivery-gallery-input"
+                      className="cursor-pointer flex items-center justify-center gap-2 border border-gray-600 hover:border-blue-500 hover:bg-gray-800 rounded-lg py-2.5 text-sm font-medium text-gray-300 transition-colors"
+                    >
+                      🖼️ Galeri
+                    </label>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-1">Auto-kompres maks 1MB</p>
+              </div>
+
+              {/* Catatan Terstruktur */}
+              <div className="border border-gray-700 rounded-lg p-4 space-y-3">
+                <p className="text-sm font-semibold text-gray-300 mb-1">Catatan Pengiriman</p>
+
+                {/* Penerima */}
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Penerima</label>
+                  <input
+                    type="text"
+                    value={penerima}
+                    onChange={(e) => setPenerima(e.target.value)}
+                    placeholder="Nama penerima..."
+                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                {/* Di Cek */}
+                <div>
+                  <label className="block text-xs text-gray-400 mb-2">Di Cek</label>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setDiCek(false)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${!diCek ? 'bg-red-700 border-red-500 text-white' : 'bg-gray-800 border-gray-600 text-gray-400 hover:border-gray-500'}`}
+                    >
+                      Tidak
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDiCek(true)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${diCek ? 'bg-green-700 border-green-500 text-white' : 'bg-gray-800 border-gray-600 text-gray-400 hover:border-gray-500'}`}
+                    >
+                      Iya
+                    </button>
+                  </div>
+                </div>
+
+                {/* Nomor Faktur */}
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Nomor Faktur</label>
+                  <input
+                    type="text"
+                    value={nomorFaktur}
+                    onChange={(e) => setNomorFaktur(e.target.value)}
+                    placeholder="Nomor faktur..."
+                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                {/* Kemasan */}
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Kemasan</label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="number"
+                      min="0"
+                      value={kemasanQ}
+                      onChange={(e) => setKemasanQ(e.target.value)}
+                      placeholder="0"
+                      className="w-20 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 text-center"
+                    />
+                    <span className="text-sm font-bold text-yellow-400">Q</span>
+                    <span className="text-gray-500 text-xs">(Karton)</span>
+                    <div className="w-px h-6 bg-gray-600 mx-1" />
+                    <input
+                      type="number"
+                      min="0"
+                      value={kemasanK}
+                      onChange={(e) => setKemasanK(e.target.value)}
+                      placeholder="0"
+                      className="w-20 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 text-center"
+                    />
+                    <span className="text-sm font-bold text-blue-400">K</span>
+                    <span className="text-gray-500 text-xs">(Kantong)</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -707,6 +1057,38 @@ export default function PetugasExpedisiDashboard() {
                 {savingDelivery ? 'Menyimpan...' : 'Update Status'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Camera Modal */}
+      {showCameraModal && (
+        <div className="fixed inset-0 bg-black z-[60] flex flex-col">
+          <div className="flex justify-between items-center px-4 py-3 bg-gray-900">
+            <h3 className="text-white font-semibold">Ambil Foto Bukti</h3>
+            <button
+              onClick={stopCamera}
+              className="text-gray-400 hover:text-white text-sm px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
+            >
+              ✕ Batal
+            </button>
+          </div>
+          <div className="flex-1 relative overflow-hidden bg-black">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <div className="bg-gray-900 px-6 py-6 flex justify-center">
+            <button
+              onClick={capturePhoto}
+              className="w-20 h-20 rounded-full bg-white border-4 border-gray-400 hover:bg-gray-100 active:scale-95 transition-all shadow-lg flex items-center justify-center"
+              aria-label="Ambil foto"
+            >
+              <div className="w-14 h-14 rounded-full bg-white border-2 border-gray-300" />
+            </button>
           </div>
         </div>
       )}
