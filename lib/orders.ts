@@ -1112,6 +1112,15 @@ export async function deleteAllInvoices() {
   }
 }
 
+export async function deleteAllOrders() {
+  try {
+    const { error } = await supabase.from('orders').delete().not('id', 'is', null);
+    return { error: error?.message || null };
+  } catch (error) {
+    return { error: String(error) };
+  }
+}
+
 export async function deleteDeliveryData(invoiceId: string) {
   try {
     const { error } = await supabase

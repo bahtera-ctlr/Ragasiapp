@@ -157,7 +157,7 @@ function SearchableSelectMkt({
 
 export default function MarketingDashboard() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, userProfile, loading } = useAuth();
   const { hasAccess } = useRoleCheck(['marketing', 'super_admin']);
 
   const [tab, setTab] = useState<'sales' | 'invoices' | 'pengajuan-diskon' | 'pengajuan-limit' | 'data-outlet' | 'historis-pengambilan' | 'report-sales'>('sales');
@@ -892,10 +892,10 @@ Terima kasih!
             + Sales Order Baru
           </button>
           <button
-            onClick={() => router.push('/dashboard')}
-            className="py-2 px-3 sm:px-4 rounded-lg font-medium text-sm bg-gray-700 hover:bg-gray-600 text-white transition-colors text-center"
+            onClick={() => router.push(userProfile?.role === 'super_admin' ? '/admin-super' : '/dashboard')}
+            className={`py-2 px-3 sm:px-4 rounded-lg font-medium text-sm text-white transition-colors text-center ${userProfile?.role === 'super_admin' ? 'bg-yellow-700 hover:bg-yellow-600' : 'bg-gray-700 hover:bg-gray-600'}`}
           >
-            ← Dashboard
+            {userProfile?.role === 'super_admin' ? '← Super Admin' : '← Dashboard'}
           </button>
         </div>
 

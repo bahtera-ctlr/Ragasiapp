@@ -33,7 +33,7 @@ const getInvoiceTitle = (invoice: LogisticsInvoice): string => {
 
 export default function PetugasExpedisiDashboard() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, userProfile, loading } = useAuth();
   const { hasAccess } = useRoleCheck(['admin_ekspedisi', 'super_admin']);
 
   const [tab, setTab] = useState<'ready' | 'planned' | 'completed'>('completed');
@@ -406,7 +406,15 @@ export default function PetugasExpedisiDashboard() {
             <h1 className="text-2xl font-bold">Admin Ekspedisi Dashboard</h1>
             <p className="text-gray-400 text-sm">Kelola pengiriman & tracking shipment</p>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            {userProfile?.role === 'super_admin' && (
+              <button
+                onClick={() => router.push('/admin-super')}
+                className="bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-4 rounded-lg"
+              >
+                ← Super Admin
+              </button>
+            )}
             <button
               onClick={handleLogout}
               className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg"

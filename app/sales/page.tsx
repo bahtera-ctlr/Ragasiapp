@@ -22,6 +22,7 @@ type Product = {
   price: number;
   stock: number;
   gol: string | null;
+  pro: string | null;
   komposisi: string | null;
 };
 
@@ -119,7 +120,7 @@ const [resultModal, setResultModal] = useState<{
     while (!done) {
       const { data, error } = await supabase
         .from("products")
-        .select("id, nama_barang, harga_jual_ragasi, stok, golongan_barang, komposisi")
+        .select("id, nama_barang, harga_jual_ragasi, stok, golongan_barang, program, komposisi")
         .order("nama_barang", { ascending: true })
         .range(from, from + batchSize - 1);
 
@@ -137,6 +138,7 @@ const [resultModal, setResultModal] = useState<{
           harga_jual_ragasi: number;
           stok: number;
           golongan_barang: string | null;
+          program: string | null;
           komposisi: string | null;
         };
 
@@ -146,6 +148,7 @@ const [resultModal, setResultModal] = useState<{
           price: item.harga_jual_ragasi,
           stock: item.stok,
           gol: item.golongan_barang,
+          pro: item.program,
           komposisi: item.komposisi,
         }));
         allProducts = [...allProducts, ...mappedData];
@@ -187,6 +190,20 @@ const [resultModal, setResultModal] = useState<{
 ) {
   const subtotal = product.price * qty;
   const gol = product.gol?.toUpperCase() || "";
+  const pro = product.pro?.toUpperCase() || "";
+
+  // ===== RULE GOL OVERRIDE: berlaku apapun cluster =====
+  if (gol === "CG") return 30;
+  if (gol === "ED") return 50;
+
+  // ===== RULE TP: override semua cluster =====
+  if (pro === "TP") {
+    if (gol === "F1") return 25;
+    if (gol === "F2") return 22.5;
+    if (gol === "F3") return 20;
+    if (gol === "F4") return 15;
+    return 0;
+  }
 
   // ===== CLUSTER 1 =====
   if (cluster === "C1") {
@@ -944,16 +961,15 @@ console.log("FILTERED:", filteredProducts.length);
       {p.stock === 0 && <span className="text-xs ml-2 text-red-600">(Habis)</span>}
     </div>
 
-    <div className={`text-sm ${p.stock === 0 ? "text-red-600" : "text-gray-600"}`}>
-      HJR: Rp {p.price?.toLocaleString()} | 
-      <span className={p.stock === 0 ? "font-semibold" : ""}>
-  Stok: {p.stock}
-</span> 
-      Gol: {p.gol || "-"}
+    <div className={`text-sm mt-1 flex flex-wrap gap-x-3 gap-y-0.5 ${p.stock === 0 ? "text-red-600" : "text-gray-600"}`}>
+      <span>HJR: <span className="font-medium">Rp {p.price?.toLocaleString()}</span></span>
+      <span>Stok: <span className={`font-medium ${p.stock === 0 ? "font-bold" : ""}`}>{p.stock}</span></span>
+      <span>Gol: <span className="font-medium">{p.gol || "-"}</span></span>
+      {p.pro && <span>Pro: <span className="font-medium">{p.pro}</span></span>}
     </div>
 
     {p.komposisi && (
-      <div className="text-xs text-gray-500 mt-1">
+      <div className="text-xs text-gray-400 mt-1">
         {p.komposisi}
       </div>
     )}
@@ -1031,6 +1047,7 @@ console.log("FILTERED:", filteredProducts.length);
   const itemName = item.isCustom ? item.customName : item.product?.name;
   const itemPrice = item.isCustom ? item.customPrice : item.product?.price;
   const itemGol = item.isCustom ? null : item.product?.gol;
+  const itemPro = item.isCustom ? null : item.product?.pro;
   const priceAfterDiscount = (itemPrice || 0) * (1 - item.discount / 100);
   const subtotal = priceAfterDiscount * item.qty;
 
@@ -1046,16 +1063,17 @@ console.log("FILTERED:", filteredProducts.length);
           {itemName} x {item.qty}
           {item.isCustom && <span className="ml-2 text-xs bg-yellow-200 px-2 py-1 rounded">Custom</span>}
         </div>
-        {itemGol && (
-          <div className="text-sm text-gray-600">
-            Gol: <span className="font-semibold">{itemGol}</span>
-            {!item.isCustom && item.product?.stock !== undefined && (
-              <span className="ml-3">Stok: <span className="font-semibold">{item.product.stock}</span></span>
+        {!item.isCustom && (
+          <div className="text-sm text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+            {itemGol && <span>Gol: <span className="font-medium text-gray-700">{itemGol}</span></span>}
+            {itemPro && <span>Pro: <span className="font-medium text-gray-700">{itemPro}</span></span>}
+            {item.product?.stock !== undefined && (
+              <span>Stok: <span className="font-medium text-gray-700">{item.product.stock}</span></span>
             )}
           </div>
         )}
-        <div>Diskon: {item.discount}%</div>
-        <div>
+        <div className="text-sm mt-1">Diskon: {item.discount}%</div>
+        <div className="text-sm">
           Subtotal: Rp {subtotal.toLocaleString()}
         </div>
       </div>
@@ -1152,8 +1170,10 @@ console.log("FILTERED:", filteredProducts.length);
                                 }`}
                               >
                                 <div className="font-semibold">{p.name}</div>
-                                <div className="text-xs text-gray-600">
-                                  Gol: {p.gol} | Harga: Rp {p.price?.toLocaleString()}
+                                <div className="text-xs text-gray-600 flex flex-wrap gap-x-3 mt-0.5">
+                                  <span>Harga: Rp {p.price?.toLocaleString()}</span>
+                                  {p.gol && <span>Gol: {p.gol}</span>}
+                                  {p.pro && <span>Pro: {p.pro}</span>}
                                 </div>
                               </div>
                             ))}
@@ -1168,7 +1188,11 @@ console.log("FILTERED:", filteredProducts.length);
                     {editProduct && (
                       <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-sm">
                         <div className="font-semibold text-green-700">✓ {editProduct.name}</div>
-                        <div className="text-xs text-green-600">Gol: {editProduct.gol} | Harga: Rp {editProduct.price?.toLocaleString()}</div>
+                        <div className="text-xs text-green-600 flex flex-wrap gap-x-3 mt-0.5">
+                          <span>Harga: Rp {editProduct.price?.toLocaleString()}</span>
+                          {editProduct.gol && <span>Gol: {editProduct.gol}</span>}
+                          {editProduct.pro && <span>Pro: {editProduct.pro}</span>}
+                        </div>
                       </div>
                     )}
                   </div>

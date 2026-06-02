@@ -17,7 +17,7 @@ import {
 import { UserRole } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { getAllDiscountRequests, approveDiscountRequest, rejectDiscountRequest, type DiscountRequest, getInvoiceFilterOptions, getFilteredInvoiceHistory, deleteAllInvoiceHistory, batchInsertInvoiceHistoryWithOutlets, type InvoiceHistory } from '@/lib/discount-requests';
-import { getAllInvoicesForAdmin, deleteInvoice, deleteAllInvoices, deleteDeliveryData } from '@/lib/orders';
+import { getAllInvoicesForAdmin, deleteInvoice, deleteAllInvoices, deleteDeliveryData, deleteOrder, deleteAllOrders } from '@/lib/orders';
 import { getSalesReport, replaceSalesReport, deleteAllSalesReport } from '@/lib/sales-report';
 import { getOutlets } from '@/lib/export';
 
@@ -211,10 +211,17 @@ export default function AdminSuperDashboard() {
   const [adminInvoiceSearch, setAdminInvoiceSearch] = useState('');
   const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
   const [deletingDeliveryId, setDeletingDeliveryId] = useState<string | null>(null);
-  const [kelolaSub, setKelolaSub] = useState<'invoice' | 'ekspedisi'>('invoice');
+  const [kelolaSub, setKelolaSub] = useState<'invoice' | 'ekspedisi' | 'orders'>('invoice');
   const [kelolaDateFrom, setKelolaDateFrom] = useState('');
   const [kelolaDateTo, setKelolaDateTo] = useState('');
   const [backingUp, setBackingUp] = useState(false);
+
+  // Kelola Data - Orders states
+  type AdminOrder = { id: string; outlet_id: string; outlet_name?: string; total_amount: number; status: string; created_at: string };
+  const [adminOrders, setAdminOrders] = useState<AdminOrder[]>([]);
+  const [loadingAdminOrders, setLoadingAdminOrders] = useState(false);
+  const [ordersSearch, setOrdersSearch] = useState('');
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
 
   // Sales Dashboard states
   const [salesStats, setSalesStats] = useState<SalesStats | null>(null);
@@ -373,9 +380,34 @@ export default function AdminSuperDashboard() {
     setLoadingAdminInvoices(false);
   }, []);
 
+  const fetchAdminOrders = useCallback(async () => {
+    setLoadingAdminOrders(true);
+    try {
+      const { data: ordersData, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      const outletIds = [...new Set((ordersData || []).map((o: { outlet_id: string }) => o.outlet_id).filter(Boolean))];
+      let outletMap = new Map<string, string>();
+      if (outletIds.length > 0) {
+        const { data: outlets } = await supabase.from('outlets').select('id, name').in('id', outletIds);
+        outletMap = new Map((outlets || []).map((o: { id: string; name: string }) => [o.id, o.name]));
+      }
+      setAdminOrders((ordersData || []).map((o: { outlet_id: string; [key: string]: unknown }) => ({
+        ...o,
+        outlet_name: outletMap.get(o.outlet_id) || o.outlet_id,
+      })) as AdminOrder[]);
+    } catch (err) {
+      console.error('Error fetching admin orders:', err);
+    } finally {
+      setLoadingAdminOrders(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (user && activeTab === 'kelola-data') fetchAdminInvoices();
-  }, [user, activeTab, fetchAdminInvoices]);
+    if (user && activeTab === 'kelola-data') {
+      fetchAdminInvoices();
+      fetchAdminOrders();
+    }
+  }, [user, activeTab, fetchAdminInvoices, fetchAdminOrders]);
 
   const handleDeleteInvoice = async (id: string, label: string) => {
     if (!confirm(`Hapus invoice:\n"${label}"?\n\nData terkait (foto, ekspedisi) juga akan terhapus.`)) return;
@@ -493,6 +525,26 @@ export default function AdminSuperDashboard() {
     } finally {
       setBackingUp(false);
     }
+  };
+
+  const handleDeleteOrder = async (id: string, label: string) => {
+    if (!confirm(`Hapus order:\n"${label}"?\n\nData order ini akan dihapus permanen.`)) return;
+    if (!confirm('Konfirmasi sekali lagi — aksi ini TIDAK BISA dibatalkan.')) return;
+    setDeletingOrderId(id);
+    const { error } = await deleteOrder(id);
+    if (error) alert(`Gagal hapus: ${error}`);
+    else setAdminOrders(prev => prev.filter(o => o.id !== id));
+    setDeletingOrderId(null);
+  };
+
+  const handleDeleteAllOrders = async () => {
+    if (!confirm('Hapus SEMUA orders dari database?\n\nSeluruh data order akan hilang permanen.')) return;
+    if (!confirm('KONFIRMASI TERAKHIR — Aksi ini TIDAK BISA dibatalkan!')) return;
+    setLoadingAdminOrders(true);
+    const { error } = await deleteAllOrders();
+    if (error) alert(`Gagal: ${error}`);
+    else { setAdminOrders([]); alert('Semua orders berhasil dihapus.'); }
+    setLoadingAdminOrders(false);
   };
 
   const fetchSalesData = useCallback(async () => {
@@ -2427,15 +2479,19 @@ export default function AdminSuperDashboard() {
 
           {/* Sub tab */}
           <div className="flex gap-2 mb-6">
-            {(['invoice', 'ekspedisi'] as const).map((sub) => (
+            {([
+              { key: 'invoice', label: '📄 Invoice' },
+              { key: 'ekspedisi', label: '🚚 Ekspedisi' },
+              { key: 'orders', label: '📦 Orders' },
+            ] as const).map((sub) => (
               <button
-                key={sub}
-                onClick={() => setKelolaSub(sub)}
+                key={sub.key}
+                onClick={() => setKelolaSub(sub.key)}
                 className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  kelolaSub === sub ? 'bg-red-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                  kelolaSub === sub.key ? 'bg-red-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                 }`}
               >
-                {sub === 'invoice' ? '📄 Invoice' : '🚚 Ekspedisi'}
+                {sub.label}
               </button>
             ))}
           </div>
@@ -2446,9 +2502,9 @@ export default function AdminSuperDashboard() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <input
                 type="text"
-                value={adminInvoiceSearch}
-                onChange={(e) => setAdminInvoiceSearch(e.target.value)}
-                placeholder="Cari outlet atau nomor faktur..."
+                value={kelolaSub === 'orders' ? ordersSearch : adminInvoiceSearch}
+                onChange={(e) => kelolaSub === 'orders' ? setOrdersSearch(e.target.value) : setAdminInvoiceSearch(e.target.value)}
+                placeholder={kelolaSub === 'orders' ? 'Cari outlet atau order ID...' : 'Cari outlet atau nomor faktur...'}
                 className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-red-500"
               />
               <div className="flex items-center gap-2">
@@ -2474,7 +2530,7 @@ export default function AdminSuperDashboard() {
             {/* Action buttons */}
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={fetchAdminInvoices}
+                onClick={kelolaSub === 'orders' ? fetchAdminOrders : fetchAdminInvoices}
                 className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded-lg transition-colors"
               >
                 🔄 Refresh
@@ -2508,77 +2564,138 @@ export default function AdminSuperDashboard() {
                   </>
                 );
               })()}
+              {kelolaSub === 'orders' && (
+                <button
+                  onClick={handleDeleteAllOrders}
+                  disabled={loadingAdminOrders || adminOrders.length === 0}
+                  className="bg-red-800 hover:bg-red-700 disabled:bg-gray-700 text-red-200 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                >
+                  🗑️ Hapus Semua Orders ({adminOrders.length})
+                </button>
+              )}
             </div>
           </div>
 
-          {loadingAdminInvoices ? (
-            <div className="text-center py-12 text-gray-400">Memuat data...</div>
-          ) : (
-            <div className="space-y-2">
-              {adminInvoices
-                .filter(inv => {
-                  if (kelolaSub === 'ekspedisi') return inv.delivery_status != null || inv.shipment_status === 'completed';
-                  return true;
-                })
-                .filter(inv => {
-                  if (kelolaDateFrom && inv.created_at < kelolaDateFrom) return false;
-                  if (kelolaDateTo && inv.created_at > kelolaDateTo + 'T23:59:59') return false;
-                  if (!adminInvoiceSearch.trim()) return true;
-                  const q = adminInvoiceSearch.toLowerCase();
-                  return (
-                    inv.outlet?.name?.toLowerCase().includes(q) ||
-                    inv.faktur_number?.toLowerCase().includes(q) ||
-                    inv.id.toLowerCase().includes(q)
-                  );
-                })
-                .map((inv) => {
-                  const label = inv.outlet?.name
-                    ? `${inv.outlet.name}${inv.faktur_number ? ` — ${inv.faktur_number}` : ''}`
-                    : inv.id.slice(0, 8).toUpperCase();
-                  const statusColor =
-                    inv.delivery_status === 'terkirim' ? 'text-green-400' :
-                    inv.delivery_status === 'gagal_kirim' ? 'text-red-400' :
-                    inv.faktur_status === 'terfaktur' ? 'text-purple-400' :
-                    inv.status === 'released' ? 'text-blue-400' : 'text-gray-400';
+          {/* Invoice & Ekspedisi list */}
+          {kelolaSub !== 'orders' && (
+            loadingAdminInvoices ? (
+              <div className="text-center py-12 text-gray-400">Memuat data...</div>
+            ) : (
+              <div className="space-y-2">
+                {adminInvoices
+                  .filter(inv => {
+                    if (kelolaSub === 'ekspedisi') return inv.delivery_status != null || inv.shipment_status === 'completed';
+                    return true;
+                  })
+                  .filter(inv => {
+                    if (kelolaDateFrom && inv.created_at < kelolaDateFrom) return false;
+                    if (kelolaDateTo && inv.created_at > kelolaDateTo + 'T23:59:59') return false;
+                    if (!adminInvoiceSearch.trim()) return true;
+                    const q = adminInvoiceSearch.toLowerCase();
+                    return (
+                      inv.outlet?.name?.toLowerCase().includes(q) ||
+                      inv.faktur_number?.toLowerCase().includes(q) ||
+                      inv.id.toLowerCase().includes(q)
+                    );
+                  })
+                  .map((inv) => {
+                    const label = inv.outlet?.name
+                      ? `${inv.outlet.name}${inv.faktur_number ? ` — ${inv.faktur_number}` : ''}`
+                      : inv.id.slice(0, 8).toUpperCase();
+                    const statusColor =
+                      inv.delivery_status === 'terkirim' ? 'text-green-400' :
+                      inv.delivery_status === 'gagal_kirim' ? 'text-red-400' :
+                      inv.faktur_status === 'terfaktur' ? 'text-purple-400' :
+                      inv.status === 'released' ? 'text-blue-400' : 'text-gray-400';
 
-                  return (
-                    <div key={inv.id} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{label}</p>
-                        <p className="text-gray-500 text-xs mt-0.5">
-                          {new Date(inv.created_at).toLocaleDateString('id-ID')} •{' '}
-                          Rp {inv.amount?.toLocaleString('id-ID') || 0} •{' '}
-                          <span className={statusColor}>
-                            {inv.delivery_status ?? inv.faktur_status ?? inv.status}
-                          </span>
-                        </p>
+                    return (
+                      <div key={inv.id} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-sm font-medium truncate">{label}</p>
+                          <p className="text-gray-500 text-xs mt-0.5">
+                            {new Date(inv.created_at).toLocaleDateString('id-ID')} •{' '}
+                            Rp {inv.amount?.toLocaleString('id-ID') || 0} •{' '}
+                            <span className={statusColor}>
+                              {inv.delivery_status ?? inv.faktur_status ?? inv.status}
+                            </span>
+                          </p>
+                        </div>
+                        {kelolaSub === 'invoice' ? (
+                          <button
+                            onClick={() => handleDeleteInvoice(inv.id, label)}
+                            disabled={deletingInvoiceId === inv.id}
+                            className="shrink-0 bg-red-900 hover:bg-red-700 disabled:bg-gray-700 text-red-200 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            {deletingInvoiceId === inv.id ? 'Menghapus...' : 'Hapus'}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleDeleteDelivery(inv.id, label)}
+                            disabled={deletingDeliveryId === inv.id}
+                            className="shrink-0 bg-orange-900 hover:bg-orange-700 disabled:bg-gray-700 text-orange-200 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            {deletingDeliveryId === inv.id ? 'Mereset...' : 'Reset Ekspedisi'}
+                          </button>
+                        )}
                       </div>
-                      {kelolaSub === 'invoice' ? (
+                    );
+                  })}
+                {adminInvoices.filter(inv => kelolaSub === 'ekspedisi' ? inv.delivery_status != null || inv.shipment_status === 'completed' : true).length === 0 && (
+                  <div className="text-center py-12 text-gray-500">
+                    {kelolaSub === 'ekspedisi' ? 'Tidak ada data ekspedisi yang selesai' : 'Tidak ada invoice'}
+                  </div>
+                )}
+              </div>
+            )
+          )}
+
+          {/* Orders list */}
+          {kelolaSub === 'orders' && (
+            loadingAdminOrders ? (
+              <div className="text-center py-12 text-gray-400">Memuat data orders...</div>
+            ) : (
+              <div className="space-y-2">
+                {adminOrders
+                  .filter(order => {
+                    if (kelolaDateFrom && order.created_at < kelolaDateFrom) return false;
+                    if (kelolaDateTo && order.created_at > kelolaDateTo + 'T23:59:59') return false;
+                    if (!ordersSearch.trim()) return true;
+                    const q = ordersSearch.toLowerCase();
+                    return (
+                      order.outlet_name?.toLowerCase().includes(q) ||
+                      order.id.toLowerCase().includes(q)
+                    );
+                  })
+                  .map((order) => {
+                    const label = order.outlet_name || order.id.slice(0, 8).toUpperCase();
+                    const statusColor =
+                      order.status === 'pending' ? 'text-yellow-400' :
+                      order.status === 'completed' ? 'text-green-400' : 'text-gray-400';
+                    return (
+                      <div key={order.id} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-sm font-medium truncate">{label}</p>
+                          <p className="text-gray-500 text-xs mt-0.5">
+                            {new Date(order.created_at).toLocaleDateString('id-ID')} •{' '}
+                            Rp {order.total_amount?.toLocaleString('id-ID') || 0} •{' '}
+                            <span className={statusColor}>{order.status}</span>
+                          </p>
+                        </div>
                         <button
-                          onClick={() => handleDeleteInvoice(inv.id, label)}
-                          disabled={deletingInvoiceId === inv.id}
+                          onClick={() => handleDeleteOrder(order.id, label)}
+                          disabled={deletingOrderId === order.id}
                           className="shrink-0 bg-red-900 hover:bg-red-700 disabled:bg-gray-700 text-red-200 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
                         >
-                          {deletingInvoiceId === inv.id ? 'Menghapus...' : 'Hapus'}
+                          {deletingOrderId === order.id ? 'Menghapus...' : 'Hapus'}
                         </button>
-                      ) : (
-                        <button
-                          onClick={() => handleDeleteDelivery(inv.id, label)}
-                          disabled={deletingDeliveryId === inv.id}
-                          className="shrink-0 bg-orange-900 hover:bg-orange-700 disabled:bg-gray-700 text-orange-200 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
-                        >
-                          {deletingDeliveryId === inv.id ? 'Mereset...' : 'Reset Ekspedisi'}
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              {adminInvoices.filter(inv => kelolaSub === 'ekspedisi' ? inv.delivery_status != null || inv.shipment_status === 'completed' : true).length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  {kelolaSub === 'ekspedisi' ? 'Tidak ada data ekspedisi yang selesai' : 'Tidak ada invoice'}
-                </div>
-              )}
-            </div>
+                      </div>
+                    );
+                  })}
+                {adminOrders.length === 0 && (
+                  <div className="text-center py-12 text-gray-500">Tidak ada orders</div>
+                )}
+              </div>
+            )
           )}
         </div>
       )}

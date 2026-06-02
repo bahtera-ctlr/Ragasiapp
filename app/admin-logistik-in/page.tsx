@@ -64,7 +64,7 @@ interface Invoice {
 
 export default function AdminLogisticInPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
   
   // Tab state - now supports 'packing-order' and 'shipping-plan'
   const [currentTab, setCurrentTab] = useState<'packing-order' | 'shipping-plan'>('packing-order');
@@ -363,10 +363,10 @@ export default function AdminLogisticInPage() {
 
         <div className="flex gap-2 mb-6">
           <button
-            onClick={() => router.push('/dashboard')}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded"
+            onClick={() => router.push(userProfile?.role === 'super_admin' ? '/admin-super' : '/dashboard')}
+            className={`px-4 py-2 rounded ${userProfile?.role === 'super_admin' ? 'bg-yellow-700 hover:bg-yellow-600' : 'bg-gray-700 hover:bg-gray-600'}`}
           >
-            ← Kembali ke Dashboard
+            {userProfile?.role === 'super_admin' ? '← Super Admin' : '← Kembali ke Dashboard'}
           </button>
         </div>
 
