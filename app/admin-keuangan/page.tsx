@@ -1266,14 +1266,15 @@ Generated: ${new Date().toLocaleString('id-ID')}
               <div className="text-center">
                 <p className="text-lg font-semibold mb-4">Upload Data Barang</p>
                 <p className="text-sm text-gray-400 mb-6">
-                  Format CSV: NB, GOL, PRO, POIN, Nama Barang, Komposisi, Principle, Sat, HJR, Stok<br/>
+                  Format CSV: NB, GOL, PRO, POIN, Nama Barang, Komposisi, Principle, Sat, HJR, Stok, SAT, ISI<br/>
                   <span className="text-xs text-gray-500 mt-2 block">
                     NB = Nomor Barang (wajib unik)<br/>
                     GOL = Golongan Barang<br/>
                     PRO = Program<br/>
                     POIN = Bobot Poin<br/>
                     HJR = Harga Jual Ragasi (contoh: 50000 atau 50.000)<br/>
-                    SAT = Satuan (contoh: PCS, BOX, dll)
+                    SAT = Satuan harga (contoh: PCS, BOX, dll)<br/>
+                    ISI = Isi per box/pack (untuk konversi qty di fitur bulk order)
                   </span>
                   <span className="text-xs text-yellow-500 mt-3 block">⚠️ Data lama akan otomatis dihapus saat upload data baru</span>
                 </p>

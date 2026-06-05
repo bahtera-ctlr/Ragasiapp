@@ -11,6 +11,7 @@ export interface StagingProduct {
   satuan?: string;
   harga_jual_ragasi?: number;
   stok?: number;
+  isi_box?: number;
 }
 
 /**
@@ -103,14 +104,35 @@ export async function uploadStagingProducts(products: StagingProduct[]) {
     }
 
     console.log(`Inserting ${products.length} new products...`);
-    const { data, error: insertError } = await supabase
+
+    // Coba insert dengan isi_box terlebih dahulu
+    let { data, error: insertError } = await supabase
       .from('products')
       .insert(products)
       .select();
 
     if (insertError) {
-      console.error('Insert error:', insertError);
-      return { error: `Gagal mengupload data barang: ${insertError.message}` };
+      const errMsg = insertError.message || insertError.details || insertError.hint || JSON.stringify(insertError);
+      console.error('Insert error detail:', { message: insertError.message, code: insertError.code, details: insertError.details, hint: insertError.hint });
+
+      // Jika kolom isi_box belum ada di database, coba tanpa isi_box
+      const isColumnMissing = errMsg.includes('isi_box') || insertError.code === '42703';
+      if (isColumnMissing) {
+        console.warn('Kolom isi_box belum ada di database. Upload tanpa isi_box...');
+        const productsWithoutIsiBox = products.map(({ isi_box: _omit, ...rest }) => rest);
+        const fallback = await supabase
+          .from('products')
+          .insert(productsWithoutIsiBox)
+          .select();
+        if (fallback.error) {
+          const fb = fallback.error;
+          return { error: `Gagal mengupload data barang: ${fb.message || fb.details || JSON.stringify(fb)}` };
+        }
+        data = fallback.data;
+        console.warn('⚠ Upload berhasil TANPA isi_box. Jalankan SQL migration "add-isi-box-column.sql" di Supabase agar kolom ISI terbaca.');
+      } else {
+        return { error: `Gagal mengupload data barang: ${errMsg}` };
+      }
     }
 
     console.log(`✓ Successfully inserted ${data?.length || 0} products`);
@@ -211,38 +233,47 @@ export function parseCsvData(csvContent: string): { data: StagingProduct[]; erro
       h.includes('hje')
     );
     
-    const stokIdx = headers.findIndex(h => 
-      h === 'stok' || 
-      h === 'stock' || 
-      h === 'qty'
+    const stokIdx = headers.findIndex(h =>
+      h === 'stok' ||
+      h === 'stock' ||
+      h === 'qty' ||
+      h.startsWith('stock r') // handles "stock r1", "stock r2" etc.
     );
 
-    console.log('Column indices found:', { nbIdx, namaIdx, golIdx, proIdx, poinIdx });
+    const isiBoxIdx = headers.findIndex(h =>
+      h === 'isi' ||
+      h === 'isi_box' ||
+      h === 'isi box'
+    );
+
+    console.log('Column indices found:', { nbIdx, namaIdx, golIdx, proIdx, poinIdx, isiBoxIdx });
 
     if (nbIdx === -1 || namaIdx === -1) {
       console.error('Missing columns! Headers found:', headers);
-      return { 
-        data: [], 
-        error: `File harus memiliki kolom: NB (Nomor Barang) dan Nama Barang. Headers ditemukan: ${headers.join(', ')}` 
+      return {
+        data: [],
+        error: `File harus memiliki kolom: NB (Nomor Barang) dan Nama Barang. Headers ditemukan: ${headers.join(', ')}`
       };
     }
 
     // Parse data rows
     const products: StagingProduct[] = [];
-    
+
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue; // Skip empty lines
 
       const cells = line.split(delimiter).map(c => c.trim());
-      
+
       const nomorBarang = cells[nbIdx];
       const namaBarang = cells[namaIdx];
-      
+
       if (!nomorBarang || !namaBarang) {
         console.warn(`Baris ${i + 1} tidak lengkap, lewatkan (NB: "${nomorBarang}", Nama: "${namaBarang}")`);
         continue;
       }
+
+      const isiRaw = isiBoxIdx !== -1 ? parseNumber(cells[isiBoxIdx]) : undefined;
 
       const product: StagingProduct = {
         nomor_barang: nomorBarang,
@@ -255,6 +286,7 @@ export function parseCsvData(csvContent: string): { data: StagingProduct[]; erro
         satuan: satIdx !== -1 && cells[satIdx] ? cells[satIdx].trim() : undefined,
         harga_jual_ragasi: hjeIdx !== -1 ? parseNumber(cells[hjeIdx]) : undefined,
         stok: stokIdx !== -1 ? Math.floor(parseNumber(cells[stokIdx]) || 0) : undefined,
+        isi_box: isiRaw !== undefined && isiRaw > 0 ? Math.round(isiRaw) : undefined,
       };
 
       products.push(product);

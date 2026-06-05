@@ -23,6 +23,7 @@ type Product = {
   stock: number;
   gol: string | null;
   pro: string | null;
+  isi_box: number | null;
   komposisi: string | null;
 };
 
@@ -97,7 +98,7 @@ const [resultModal, setResultModal] = useState<{
       }
 
       if (data && data.length > 0) {
-        allOutlets = [...allOutlets, ...data];
+        allOutlets = allOutlets.concat(data);
         from += batchSize;
       } else {
         done = true;
@@ -120,7 +121,7 @@ const [resultModal, setResultModal] = useState<{
     while (!done) {
       const { data, error } = await supabase
         .from("products")
-        .select("id, nama_barang, harga_jual_ragasi, stok, golongan_barang, program, komposisi")
+        .select("id, nama_barang, harga_jual_ragasi, stok, golongan_barang, program, isi_box, komposisi")
         .order("nama_barang", { ascending: true })
         .range(from, from + batchSize - 1);
 
@@ -139,6 +140,7 @@ const [resultModal, setResultModal] = useState<{
           stok: number;
           golongan_barang: string | null;
           program: string | null;
+          isi_box: number | null;
           komposisi: string | null;
         };
 
@@ -149,9 +151,10 @@ const [resultModal, setResultModal] = useState<{
           stock: item.stok,
           gol: item.golongan_barang,
           pro: item.program,
+          isi_box: item.isi_box,
           komposisi: item.komposisi,
         }));
-        allProducts = [...allProducts, ...mappedData];
+        allProducts = allProducts.concat(mappedData);
         from += batchSize;
       } else {
         done = true;
@@ -164,6 +167,13 @@ const [resultModal, setResultModal] = useState<{
   useEffect(() => {
   fetchProducts();
 }, []);
+
+  // Cache normStr per produk — dihitung sekali saat products berubah, bukan tiap bulk line
+  const productNormCache = useMemo(
+    () => new Map(products.map(p => [p.id, normStr(p.name)])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [products]
+  );
 
 
   useEffect(() => {
@@ -189,6 +199,9 @@ const [resultModal, setResultModal] = useState<{
   qty: number
 ) {
   const subtotal = product.price * qty;
+
+  // Jika nilai per item ≤ Rp 35.000 → diskon flat 9%
+  if (subtotal <= 35000) return 9;
   const gol = product.gol?.toUpperCase() || "";
   const pro = product.pro?.toUpperCase() || "";
 
@@ -207,19 +220,19 @@ const [resultModal, setResultModal] = useState<{
 
   // ===== CLUSTER 1 =====
   if (cluster === "C1") {
-    if (subtotal > 333000) return 15;
+    if (subtotal > 350000) return 15;
     return 12.5;
   }
 
   // ===== CLUSTER 2 =====
   if (cluster === "C2") {
     if (["F1", "F2", "F3"].includes(gol)) {
-      if (subtotal > 333000) return 20;
+      if (subtotal > 350000) return 20;
       return 17.5;
     }
 
     if (gol === "F4") {
-      if (subtotal > 333000) return 15;
+      if (subtotal > 350000) return 15;
       return 12.5;
     }
   }
@@ -325,12 +338,23 @@ function calculateSimilarity(input: string, productName: string): number {
 
 // Satuan DOSIS/UKURAN: angka sebelumnya adalah bagian dari nama produk (bukan qty)
 const DOSAGE_UNIT = /^(?:mg|ml|mcg|iu|gr?|kg|cc|cm|mm|inch|in)$/i;
-// Satuan KUANTITAS: angka sebelumnya ADALAH qty
-const QTY_UNIT_RE = /^(?:box|pcs|btl|botol|sachet|sach|strip|tab(?:let)?|kaps?(?:ul)?|biji|unit|lembar|pak(?:et)?|dus|karton|slop|lusin|roll)$/i;
-// Regex untuk angka yang langsung menempel ke satuan kuantitas (tanpa spasi): "1box", "3btl"
-const GLUED_QTY = /(\d+)(box|pcs|btl|botol|sachet|sach|strip|tablet|kapsul|kap|biji|unit|slop|dus|pak|roll)/i;
+// Satuan KUANTITAS: angka sebelumnya ADALAH qty (diperluas dengan keyword box)
+const QTY_UNIT_RE = /^(?:box|boc|bov|bog|bqll|bwll|bju|ball|pcs|btl|botol|sachet|sach|strip|str|tab(?:let)?|kaps?(?:ul)?|bls|blstr|biji|unit|lembar|pak(?:et)?|dus|karton|slop|lusin|lsn|selusin|roll|tube|tubr|tubd|tbr|amp|vial)$/i;
+// Regex untuk angka yang langsung menempel ke satuan (tanpa spasi): "1boc", "3btl", "10tube"
+const GLUED_QTY = /(\d+)(boc|bov|bog|bqll|bwll|bju|ball|box|pcs|btl|botol|sachet|sach|strip|str|tablet|kapsul|kap|bls|biji|unit|slop|dus|pak|roll|tube|tubr|tubd|tbr|amp|vial|lsn)/i;
 
-function parseBulkLine(line: string): { name: string; qty: number } | null {
+// Klasifikasi unit type untuk keperluan diskon
+const BOX_UNIT_RE = /^(?:boc|bov|bog|bqll|bwll|bju|ball|box|pak(?:et)?|bx|dus|karton)$/i;
+const STRIP_UNIT_RE = /^(?:str|strip|bls|blstr|blister|tab(?:let)?|kaps?(?:ul)?)$/i;
+
+function detectUnitType(unitToken: string): 'box' | 'satuan' | 'strip' {
+  const u = unitToken.toLowerCase().replace(/[^a-z]/g, '');
+  if (BOX_UNIT_RE.test(u)) return 'box';
+  if (STRIP_UNIT_RE.test(u)) return 'strip';
+  return 'satuan';
+}
+
+function parseBulkLine(line: string): { name: string; qty: number; unitType: 'box' | 'satuan' | 'strip' } | null {
   const cleaned = line
     .replace(/^[\s•\-*]+/, '')   // leading bullets
     .replace(/^\d+[.)]\s+/, '')  // "1. " or "1) " numbered list
@@ -338,22 +362,25 @@ function parseBulkLine(line: string): { name: string; qty: number } | null {
     .trim();
   if (!cleaned) return null;
 
-  // Explicit × separator: "Panadol x 5"  or  "5 x Panadol"
+  // Explicit × separator: "Panadol x 5"  or  "5 x Panadol" — no unit info → strip (conservative)
   const xEnd   = cleaned.match(/^(.+?)\s+[xX]\s+(\d+)\s*$/);
-  if (xEnd) return { name: xEnd[1].trim(), qty: parseInt(xEnd[2]) };
+  if (xEnd) return { name: xEnd[1].trim(), qty: parseInt(xEnd[2]), unitType: 'strip' };
   const xStart = cleaned.match(/^(\d+)\s*[xX]\s+(.+)$/);
-  if (xStart) return { name: xStart[2].trim(), qty: parseInt(xStart[1]) };
+  if (xStart) return { name: xStart[2].trim(), qty: parseInt(xStart[1]), unitType: 'strip' };
 
-  // Handle "1box", "3btl" — number glued to qty unit without space
+  // Handle "1boc", "3btl", "10tube" — number glued to qty unit without space
   const glued = cleaned.match(GLUED_QTY);
   if (glued) {
     const qty = parseInt(glued[1]);
+    const detectedUnit = glued[2];
     const name = cleaned.replace(glued[0], '').replace(/\s+/g, ' ').trim();
-    if (name.length >= 2 && qty > 0 && qty <= 9999) return { name, qty };
+    if (name.length >= 2 && qty > 0 && qty <= 9999) {
+      return { name, qty, unitType: detectUnitType(detectedUnit) };
+    }
   }
 
   // Classify all integers: dosage/size (skip) vs qty (keep)
-  const allNums: Array<{ val: number; start: number; len: number; isQty: boolean }> = [];
+  const allNums: Array<{ val: number; start: number; len: number; isQty: boolean; unitToken: string }> = [];
   const numRe = /(\d+)/g;
   let m: RegExpExecArray | null;
   while ((m = numRe.exec(cleaned)) !== null) {
@@ -382,6 +409,7 @@ function parseBulkLine(line: string): { name: string; qty: number } | null {
       start: idx,
       len: numStr.length,
       isQty: !isDosage || isQtyUnit,
+      unitToken: nextToken,
     });
   }
 
@@ -390,22 +418,23 @@ function parseBulkLine(line: string): { name: string; qty: number } | null {
   // Pick the last number classified as qty
   const qtyNums = allNums.filter(n => n.isQty);
   const chosen  = qtyNums.length > 0 ? qtyNums[qtyNums.length - 1] : allNums[allNums.length - 1];
+  const chosenUnitType = QTY_UNIT_RE.test(chosen.unitToken) ? detectUnitType(chosen.unitToken) : 'strip';
 
   // Remove chosen number AND any qty unit word from the name
   let name = (cleaned.slice(0, chosen.start) + cleaned.slice(chosen.start + chosen.len))
-    .replace(/\b(?:box|pcs|btl|botol|sachet|sach|strip|tablet|kapsul|kap|biji|unit|lembar|pak|paket|dus|karton|slop|lusin|roll)\b/gi, '')
+    .replace(/\b(?:boc|bov|bog|bqll|bwll|bju|ball|box|pcs|btl|botol|sachet|sach|strip|str|tablet|kapsul|kap|bls|biji|unit|lembar|pak|paket|dus|karton|slop|lusin|lsn|roll|tube|tubr|tubd|tbr|amp|vial)\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 
   if (name.length >= 2 && chosen.val > 0 && chosen.val <= 9999) {
-    return { name, qty: chosen.val };
+    return { name, qty: chosen.val, unitType: chosenUnitType };
   }
 
-  // Fallback: first number = qty (format "5 Panadol")
+  // Fallback: first number = qty (format "5 Panadol"), no unit info → strip
   const first = allNums[0];
   const nameFromFirst = cleaned.slice(first.start + first.len).trim();
   if (nameFromFirst.length >= 2 && first.val > 0 && first.val <= 9999) {
-    return { name: nameFromFirst, qty: first.val };
+    return { name: nameFromFirst, qty: first.val, unitType: 'strip' };
   }
 
   return null;
@@ -431,13 +460,14 @@ function handleBulkAdd() {
     const parsed = parseBulkLine(line);
     if (!parsed) return;
 
-    const { name: productName, qty } = parsed;
+    const { name: productName, qty: rawQty, unitType } = parsed;
+    const normInput = normStr(productName);
 
-    // Exact / contains match first (normalized)
-    let found = products.find((p) =>
-      normStr(p.name).includes(normStr(productName)) ||
-      normStr(productName).includes(normStr(p.name))
-    );
+    // Exact / contains match first — pakai cache, tidak panggil normStr ulang
+    let found = products.find((p) => {
+      const nc = productNormCache.get(p.id) ?? '';
+      return nc.includes(normInput) || normInput.includes(nc);
+    });
 
     // Fuzzy match if no exact hit
     if (!found) {
@@ -453,6 +483,11 @@ function handleBulkAdd() {
     }
 
     if (found) {
+      // Jika unit box → kalikan dengan isi_box produk
+      const qty = unitType === 'box'
+        ? rawQty * (found.isi_box || 1)
+        : rawQty;
+
       setCart((prev) => {
         // Jika produk sudah ada di cart → tambahkan qty
         const existing = prev.find(
@@ -460,13 +495,12 @@ function handleBulkAdd() {
         );
 
         if (existing) {
+          const newQty = existing.qty + qty;
+          const newDiscount = getDiscount(selectedOutlet.cluster, found, newQty);
+          const newSubtotal = newQty * (found.price - (found.price * newDiscount) / 100);
           return prev.map((item) =>
             !item.isCustom && item.product && item.product.id === found.id
-              ? {
-                  ...item,
-                  qty: item.qty + qty,
-                  subtotal: (item.qty + qty) * (item.product?.price || 0),
-                }
+              ? { ...item, qty: newQty, discount: newDiscount, subtotal: newSubtotal }
               : item
           );
         }
@@ -475,25 +509,12 @@ function handleBulkAdd() {
           return prev; // Sudah penuh, skip item ini
         }
 
-        const discount = getDiscount(
-          selectedOutlet.cluster,
-          found,
-          qty
-        );
-
-        const subtotal =
-          qty *
-          (found.price -
-            (found.price * discount) / 100);
+        const discount = getDiscount(selectedOutlet.cluster, found, qty);
+        const subtotal = qty * (found.price - (found.price * discount) / 100);
 
         return [
           ...prev,
-          {
-            product: found,
-            qty,
-            discount,
-            subtotal,
-          },
+          { product: found, qty, discount, subtotal },
         ];
       });
       successCount++;
@@ -783,6 +804,18 @@ function handleAddItem() {
     orderData: orderData
   });
 
+  // Kurangi stok produk secara lokal — tidak perlu full refetch
+  setProducts(prev => {
+    const soldMap = new Map(
+      cart
+        .filter(item => !item.isCustom && item.product)
+        .map(item => [item.product!.id, item.qty])
+    );
+    return prev.map(p =>
+      soldMap.has(p.id) ? { ...p, stock: Math.max(0, p.stock - soldMap.get(p.id)!) } : p
+    );
+  });
+
   // Clear state setelah disimpan di modal
   setTimeout(() => {
     setCart([]);
@@ -792,8 +825,6 @@ function handleAddItem() {
     setShippingRequest('REGULER');
     setQty(1);
   }, 100);
-
-  await fetchProducts();
 }
 
   // TOTAL
@@ -806,16 +837,18 @@ function handleAddItem() {
     }, 0);
   }, [cart]);
 
-const filteredProducts = useMemo(() => {
-  const keyword = productSearch.toLowerCase();
+const filteredOutlets = useMemo(() => {
+  if (!outletSearch) return [];
+  const kw = outletSearch.toLowerCase();
+  return outlets.filter(o => o.name.toLowerCase().includes(kw));
+}, [outlets, outletSearch]);
 
-  return products.filter((p) =>
-    p.name?.toLowerCase().includes(keyword)
-  );
+const filteredProducts = useMemo(() => {
+  if (!productSearch) return [];
+  const keyword = productSearch.toLowerCase();
+  const matched = products.filter(p => p.name?.toLowerCase().includes(keyword));
+  return matched.slice(0, 80); // batas render dropdown
 }, [products, productSearch]);
-console.log("TOTAL PRODUCTS:", products.length);
-console.log("SEARCH:", productSearch);
-console.log("FILTERED:", filteredProducts.length);
 
   return (
     <div className="min-h-screen bg-gray-200 p-10 text-gray-800">
@@ -855,27 +888,20 @@ console.log("FILTERED:", filteredProducts.length);
 
     {showOutletDropdown && outletSearch && (
       <div className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto border border-gray-300 rounded-lg bg-white shadow">
-        {outlets
-          .filter((o) =>
-            o.name.toLowerCase().includes(outletSearch.toLowerCase())
-          )
-          .map((o) => (
-            <div
-              key={o.id}
-              onClick={() => {
-                setSelectedOutlet(o);
-                setOutletSearch(o.name);
-                setShowOutletDropdown(false);
-              }}
-              className="px-3 py-2 hover:bg-blue-100 cursor-pointer"
-            >
-              {o.name}
-            </div>
-          ))}
-
-        {outlets.filter((o) =>
-          o.name.toLowerCase().includes(outletSearch.toLowerCase())
-        ).length === 0 && (
+        {filteredOutlets.map((o) => (
+          <div
+            key={o.id}
+            onClick={() => {
+              setSelectedOutlet(o);
+              setOutletSearch(o.name);
+              setShowOutletDropdown(false);
+            }}
+            className="px-3 py-2 hover:bg-blue-100 cursor-pointer"
+          >
+            {o.name}
+          </div>
+        ))}
+        {filteredOutlets.length === 0 && (
           <div className="px-3 py-2 text-gray-400">
             Outlet tidak ditemukan
           </div>
@@ -1348,14 +1374,9 @@ console.log("FILTERED:", filteredProducts.length);
                 ) : (
                   <div>
                     <label className="block font-semibold mb-2">Diskon (%):</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={editDiscount}
-                      onChange={(e) => setEditDiscount(Number(e.target.value))}
-                      className="w-full border border-gray-300 rounded-lg p-3 text-lg"
-                    />
+                    <div className="w-full border border-gray-200 rounded-lg p-3 text-lg bg-gray-100 text-gray-600 select-none">
+                      {editDiscount}%
+                    </div>
                   </div>
                 )}
 
