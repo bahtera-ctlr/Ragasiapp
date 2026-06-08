@@ -168,14 +168,6 @@ const [resultModal, setResultModal] = useState<{
   fetchProducts();
 }, []);
 
-  // Cache normStr per produk — dihitung sekali saat products berubah, bukan tiap bulk line
-  const productNormCache = useMemo(
-    () => new Map(products.map(p => [p.id, normStr(p.name)])),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [products]
-  );
-
-
   useEffect(() => {
   function handleClickOutside(event: MouseEvent) {
     if (
@@ -849,6 +841,12 @@ const filteredProducts = useMemo(() => {
   const matched = products.filter(p => p.name?.toLowerCase().includes(keyword));
   return matched.slice(0, 80); // batas render dropdown
 }, [products, productSearch]);
+
+// Cache normStr per produk — HARUS di bawah deklarasi normStr & UNIT_RE
+const productNormCache = useMemo(
+  () => new Map(products.map(p => [p.id, normStr(p.name)])),
+  [products]
+);
 
   return (
     <div className="min-h-screen bg-gray-200 p-10 text-gray-800">
