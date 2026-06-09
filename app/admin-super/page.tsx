@@ -1441,11 +1441,11 @@ export default function AdminSuperDashboard() {
     return null;
   }
 
-  const filteredUsers = users.filter(
-    (user) =>
-      user.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(userSearchQuery.toLowerCase())
-  );
+  const filteredUsers = useMemo(() => {
+    if (!userSearchQuery) return users;
+    const kw = userSearchQuery.toLowerCase();
+    return users.filter(u => u.name.toLowerCase().includes(kw) || u.email.toLowerCase().includes(kw));
+  }, [users, userSearchQuery]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100">

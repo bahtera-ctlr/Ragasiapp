@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getCompletedShipments } from '@/lib/orders';
@@ -85,16 +85,17 @@ export default function PetugasExpedisiDashboard() {
     router.push('/');
   };
 
-  // Filter function
-  const filteredShipments = completedShipments.filter(invoice => {
-    if (!searchQuery.trim()) return true;
+  const filteredShipments = useMemo(() => {
+    if (!searchQuery.trim()) return completedShipments;
     const query = searchQuery.toLowerCase();
-    const outletName = invoice.outlet?.name?.toLowerCase() || '';
-    const orderId = invoice.order_id?.slice(0, 8).toUpperCase() || '';
-    const officerName = (invoice.expedisi_officer_name || '').toLowerCase();
-    const amount = invoice.amount?.toString() || '';
-    return outletName.includes(query) || orderId.includes(query) || officerName.includes(query) || amount.includes(query);
-  });
+    return completedShipments.filter(invoice => {
+      const outletName = invoice.outlet?.name?.toLowerCase() || '';
+      const orderId = invoice.order_id?.slice(0, 8).toUpperCase() || '';
+      const officerName = (invoice.expedisi_officer_name || '').toLowerCase();
+      const amount = invoice.amount?.toString() || '';
+      return outletName.includes(query) || orderId.includes(query) || officerName.includes(query) || amount.includes(query);
+    });
+  }, [completedShipments, searchQuery]);
 
   return (
     <div className="min-h-screen bg-black text-white">

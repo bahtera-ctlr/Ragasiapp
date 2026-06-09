@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getReadyToShipInvoices, getPlannedShipments, getCompletedShipments, planShipment, updateShipmentDelivery } from '@/lib/orders';
@@ -391,9 +391,9 @@ export default function PetugasExpedisiDashboard() {
     });
   };
 
-  const filteredReadyToShip = filterInvoices(readyToShip, searchReady);
-  const filteredPlannedShipments = filterInvoices(plannedShipments, searchPlanned);
-  const filteredCompletedShipments = filterInvoices(completedShipments, searchCompleted);
+  const filteredReadyToShip = useMemo(() => filterInvoices(readyToShip, searchReady), [readyToShip, searchReady]);
+  const filteredPlannedShipments = useMemo(() => filterInvoices(plannedShipments, searchPlanned), [plannedShipments, searchPlanned]);
+  const filteredCompletedShipments = useMemo(() => filterInvoices(completedShipments, searchCompleted), [completedShipments, searchCompleted]);
 
   if (loading || !hasAccess) return <LoadingSpinner />;
 

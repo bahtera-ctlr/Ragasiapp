@@ -66,8 +66,6 @@ function parseNumber(value: string | number | null | undefined): number | undefi
  */
 export async function uploadStagingProducts(products: StagingProduct[]) {
   try {
-    // First, get all existing products to delete them
-    console.log('Fetching existing products to delete...');
     const { data: existingData, error: fetchError } = await supabase
       .from('products')
       .select('id');
@@ -79,7 +77,6 @@ export async function uploadStagingProducts(products: StagingProduct[]) {
 
     // Delete all existing products if any exist
     if (existingData && existingData.length > 0) {
-      console.log(`Deleting ${existingData.length} existing products...`);
       const ids = existingData.map(item => item.id);
       
       // Delete in batches (Supabase has limits)
@@ -95,15 +92,11 @@ export async function uploadStagingProducts(products: StagingProduct[]) {
           return { error: `Gagal menghapus data lama: ${deleteError.message}` };
         }
       }
-      console.log('✓ Old data deleted');
     }
 
-    // Then insert new products
     if (products.length === 0) {
       return { data: [], error: null };
     }
-
-    console.log(`Inserting ${products.length} new products...`);
 
     // Coba insert dengan isi_box terlebih dahulu
     let { data, error: insertError } = await supabase
@@ -135,7 +128,6 @@ export async function uploadStagingProducts(products: StagingProduct[]) {
       }
     }
 
-    console.log(`✓ Successfully inserted ${data?.length || 0} products`);
     return { data, error: null };
   } catch (err) {
     console.error('Unexpected error:', err);
@@ -167,12 +159,7 @@ export function parseCsvData(csvContent: string): { data: StagingProduct[]; erro
       delimiter = ';';
     }
 
-    console.log('Detected delimiter:', JSON.stringify(delimiter), 'in header:', headerLine);
-
-    // Parse header (first line)
     const headers = headerLine.split(delimiter).map(h => h.trim().toLowerCase());
-    
-    console.log('Parsed headers:', headers);
 
     // Find column indices (flexible matching)
     const nbIdx = headers.findIndex(h => 
@@ -246,8 +233,6 @@ export function parseCsvData(csvContent: string): { data: StagingProduct[]; erro
       h === 'isi box'
     );
 
-    console.log('Column indices found:', { nbIdx, namaIdx, golIdx, proIdx, poinIdx, isiBoxIdx });
-
     if (nbIdx === -1 || namaIdx === -1) {
       console.error('Missing columns! Headers found:', headers);
       return {
@@ -269,7 +254,6 @@ export function parseCsvData(csvContent: string): { data: StagingProduct[]; erro
       const namaBarang = cells[namaIdx];
 
       if (!nomorBarang || !namaBarang) {
-        console.warn(`Baris ${i + 1} tidak lengkap, lewatkan (NB: "${nomorBarang}", Nama: "${namaBarang}")`);
         continue;
       }
 
@@ -290,10 +274,8 @@ export function parseCsvData(csvContent: string): { data: StagingProduct[]; erro
       };
 
       products.push(product);
-      console.log(`Row ${i} parsed:`, product);
     }
 
-    console.log(`Total products parsed: ${products.length}`);
     return { data: products };
   } catch (err) {
     console.error('CSV parse error:', err);

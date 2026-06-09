@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getOutlets, exportOutletsToCSV, exportProductsToCSV } from '@/lib/export';
@@ -224,34 +224,40 @@ export default function AdminKeuanganDashboard() {
     );
   }
 
-  // Filter and paginate products
-  const filteredProducts = stagingProducts.filter(product => {
-    const searchLower = productSearch.toLowerCase();
-    return (
-      (String(product.nomor_barang || '').toLowerCase().includes(searchLower)) ||
-      (String(product.nama_barang || '').toLowerCase().includes(searchLower)) ||
-      (String(product.golongan_barang || '').toLowerCase().includes(searchLower))
+  const filteredProducts = useMemo(() => {
+    if (!productSearch) return stagingProducts;
+    const kw = productSearch.toLowerCase();
+    return stagingProducts.filter(p =>
+      String(p.nomor_barang || '').toLowerCase().includes(kw) ||
+      String(p.nama_barang || '').toLowerCase().includes(kw) ||
+      String(p.golongan_barang || '').toLowerCase().includes(kw)
     );
-  });
+  }, [stagingProducts, productSearch]);
 
   const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
   const startIdx = (productPage - 1) * ITEMS_PER_PAGE;
-  const paginatedProducts = filteredProducts.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+  const paginatedProducts = useMemo(
+    () => filteredProducts.slice(startIdx, startIdx + ITEMS_PER_PAGE),
+    [filteredProducts, startIdx]
+  );
 
-  // Filter and paginate employees
-  const filteredEmployees = employees.filter(emp => {
-    const searchLower = employeeSearch.toLowerCase();
-    return (
-      (emp.nip?.toLowerCase().includes(searchLower)) ||
-      (emp.nama_karyawan?.toLowerCase().includes(searchLower)) ||
-      (emp.grade?.toLowerCase().includes(searchLower)) ||
-      (emp.jabatan?.toLowerCase().includes(searchLower))
+  const filteredEmployees = useMemo(() => {
+    if (!employeeSearch) return employees;
+    const kw = employeeSearch.toLowerCase();
+    return employees.filter(emp =>
+      emp.nip?.toLowerCase().includes(kw) ||
+      emp.nama_karyawan?.toLowerCase().includes(kw) ||
+      emp.grade?.toLowerCase().includes(kw) ||
+      emp.jabatan?.toLowerCase().includes(kw)
     );
-  });
+  }, [employees, employeeSearch]);
 
   const employeeTotalPages = Math.ceil(filteredEmployees.length / EMPLOYEE_ITEMS_PER_PAGE);
   const employeeStartIdx = (employeePage - 1) * EMPLOYEE_ITEMS_PER_PAGE;
-  const paginatedEmployees = filteredEmployees.slice(employeeStartIdx, employeeStartIdx + EMPLOYEE_ITEMS_PER_PAGE);
+  const paginatedEmployees = useMemo(
+    () => filteredEmployees.slice(employeeStartIdx, employeeStartIdx + EMPLOYEE_ITEMS_PER_PAGE),
+    [filteredEmployees, employeeStartIdx]
+  );
 
   const handleExportOutlets = async () => {
     setIsExporting(true);

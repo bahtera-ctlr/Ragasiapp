@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getInvoices, updateInvoiceFakturStatus } from '@/lib/orders';
@@ -81,6 +81,21 @@ export default function FakturisDashboard() {
     fetchInvoices();
     fetchEmployees();
   }, [loading, hasAccess]);
+
+  // Memoized filters — dihitung ulang hanya saat invoices berubah
+  const belumDifakturkan = useMemo(
+    () => invoices.filter(inv => inv.faktur_status !== 'terfaktur'),
+    [invoices]
+  );
+  const sudahDifakturkan = useMemo(
+    () => invoices.filter(inv => inv.faktur_status === 'terfaktur'),
+    [invoices]
+  );
+  const displayedInvoices = fakturTab === 'belum' ? belumDifakturkan : sudahDifakturkan;
+  const totalAmount = useMemo(
+    () => displayedInvoices.reduce((sum, inv) => sum + (inv.amount || 0), 0),
+    [displayedInvoices]
+  );
 
   // Show loading while auth is checking
   if (loading) {
@@ -336,13 +351,6 @@ export default function FakturisDashboard() {
   };
 
   if (loading || !hasAccess) return <LoadingSpinner />;
-
-  // Filter invoices berdasarkan faktur status
-  const belumDifakturkan = invoices.filter(inv => inv.faktur_status !== 'terfaktur');
-  const sudahDifakturkan = invoices.filter(inv => inv.faktur_status === 'terfaktur');
-  
-  const displayedInvoices = fakturTab === 'belum' ? belumDifakturkan : sudahDifakturkan;
-  const totalAmount = displayedInvoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
 
   return (
     <div className="min-h-screen bg-black text-white">

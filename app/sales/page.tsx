@@ -73,6 +73,7 @@ const [resultModal, setResultModal] = useState<{
     outlet: Outlet;
     items: CartItem[];
     total: number;
+    invoiceCount?: number;
   };
 } | null>(null);
 
@@ -126,8 +127,7 @@ const [resultModal, setResultModal] = useState<{
         .range(from, from + batchSize - 1);
 
       if (error) {
-  console.log("FULL ERROR:", error);
-  alert("Gagal post order");
+  console.error("Gagal fetch products:", error);
   return;
 }
 
@@ -497,10 +497,6 @@ function handleBulkAdd() {
           );
         }
 
-        if (prev.length >= MAX_FAKTUR_ITEMS) {
-          return prev; // Sudah penuh, skip item ini
-        }
-
         const discount = getDiscount(selectedOutlet.cluster, found, qty);
         const subtotal = qty * (found.price - (found.price * discount) / 100);
 
@@ -569,14 +565,7 @@ const MAX_FAKTUR_ITEMS = 22;
 function handleAddItem() {
   if (!selectedProduct || !selectedOutlet) return;
 
-  const isExisting = cart.some(
-    (item) => !item.isCustom && item.product && item.product.id === selectedProduct.id
-  );
-
-  if (!isExisting && cart.length >= MAX_FAKTUR_ITEMS) {
-    showNotification(`Maksimal ${MAX_FAKTUR_ITEMS} item per order (1 faktur = maks ${MAX_FAKTUR_ITEMS} baris). Buat order baru untuk item selanjutnya.`, "error");
-    return;
-  }
+  // Tidak ada batas — jika melebihi MAX_FAKTUR_ITEMS akan dipecah otomatis saat submit
 
   setCart((prev) => {
     const existing = prev.find(
@@ -735,16 +724,13 @@ function handleAddItem() {
     return;
   }
 
-  if (cart.length > MAX_FAKTUR_ITEMS) {
-    setResultModal({
-      type: "error",
-      title: "Terlalu Banyak Item",
-      message: `Order melebihi batas ${MAX_FAKTUR_ITEMS} item. Saat ini ada ${cart.length} item. Hapus beberapa item atau bagi menjadi 2 order terpisah.`
-    });
-    return;
+  // Pecah cart menjadi chunks maks MAX_FAKTUR_ITEMS
+  const chunks: CartItem[][] = [];
+  for (let i = 0; i < cart.length; i += MAX_FAKTUR_ITEMS) {
+    chunks.push(cart.slice(i, i + MAX_FAKTUR_ITEMS));
   }
 
-  const itemsPayload = cart.map((item) => ({
+  const toPayload = (items: CartItem[]) => items.map((item) => ({
     product_id: item.product?.id || null,
     product_name: item.isCustom ? item.customName : item.product?.name,
     quantity: item.qty,
@@ -754,46 +740,52 @@ function handleAddItem() {
     subtotal: item.subtotal,
   }));
 
-  const { error } = await supabase.rpc("create_sales_order_v2", {
-    p_outlet_id: selectedOutlet.id,
-    p_total: total,
-    p_items: itemsPayload,
-    p_shipping_request: shippingRequest,
-  });
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const chunkTotal = chunk.reduce((acc, item) => acc + item.subtotal, 0);
 
-  if (error) {
-    console.error(error);
-    let errorMessage = error.message || "Terjadi kesalahan saat memproses order";
-    
-    // Parse error message untuk lebih readable - replace product ID dengan product name
-    if (errorMessage.includes("Stok tidak mencukupi")) {
-      // Format: "Stok tidak mencukupi: Produk ID {uuid} hanya tersedia {x} unit, diminta {y}"
-      errorMessage = errorMessage.replace(/Produk ID ([a-f0-9\-]+)/gi, (_match, uuid) => {
-        const cartItem = cart.find(item => item.product?.id === uuid);
-        const productName = cartItem?.product?.name || uuid;
-        return `Produk ${productName}`;
-      });
-    }
-    
-    setResultModal({
-      type: "error",
-      title: "Gagal Post Order",
-      message: errorMessage
+    const { error } = await supabase.rpc("create_sales_order_v2", {
+      p_outlet_id: selectedOutlet.id,
+      p_total: chunkTotal,
+      p_items: toPayload(chunk),
+      p_shipping_request: shippingRequest,
     });
-    return;
+
+    if (error) {
+      console.error(error);
+      let errorMessage = error.message || "Terjadi kesalahan saat memproses order";
+      if (errorMessage.includes("Stok tidak mencukupi")) {
+        errorMessage = errorMessage.replace(/Produk ID ([a-f0-9\-]+)/gi, (_match, uuid) => {
+          const cartItem = cart.find(item => item.product?.id === uuid);
+          return `Produk ${cartItem?.product?.name || uuid}`;
+        });
+      }
+      setResultModal({
+        type: "error",
+        title: `Gagal Post Order (Invoice ${i + 1} dari ${chunks.length})`,
+        message: errorMessage,
+      });
+      return;
+    }
   }
 
   // Store data sebelum clear
   const orderData = {
     outlet: selectedOutlet,
     items: cart,
-    total: total
+    total: total,
+    invoiceCount: chunks.length,
   };
 
   setResultModal({
     type: "success",
-    title: "Order Berhasil!",
-    orderData: orderData
+    title: chunks.length > 1
+      ? `Order Berhasil! (${chunks.length} Invoice)`
+      : "Order Berhasil!",
+    message: chunks.length > 1
+      ? `${cart.length} item dipecah otomatis menjadi ${chunks.length} invoice untuk ${selectedOutlet.name}.`
+      : undefined,
+    orderData: orderData,
   });
 
   // Kurangi stok produk secara lokal — tidak perlu full refetch
@@ -1051,20 +1043,28 @@ const productNormCache = useMemo(
         </div>
 
 {/* CART HEADER & ITEM COUNTER */}
-{cart.length > 0 && (
-  <div className={`flex items-center justify-between px-3 py-2 rounded-lg mb-2 text-sm font-semibold ${
-    cart.length >= MAX_FAKTUR_ITEMS
-      ? 'bg-red-100 border border-red-400 text-red-700'
-      : cart.length >= MAX_FAKTUR_ITEMS - 3
-      ? 'bg-yellow-100 border border-yellow-400 text-yellow-700'
-      : 'bg-gray-100 border border-gray-300 text-gray-600'
-  }`}>
-    <span>Keranjang</span>
-    <span>{cart.length} / {MAX_FAKTUR_ITEMS} item
-      {cart.length >= MAX_FAKTUR_ITEMS && ' — PENUH'}
-    </span>
-  </div>
-)}
+{cart.length > 0 && (() => {
+  const invoiceCount = Math.ceil(cart.length / MAX_FAKTUR_ITEMS);
+  const isOverLimit = cart.length > MAX_FAKTUR_ITEMS;
+  const isNearLimit = !isOverLimit && cart.length >= MAX_FAKTUR_ITEMS - 3;
+  return (
+    <div className={`flex items-center justify-between px-3 py-2 rounded-lg mb-2 text-sm font-semibold ${
+      isOverLimit
+        ? 'bg-blue-100 border border-blue-400 text-blue-700'
+        : isNearLimit
+        ? 'bg-yellow-100 border border-yellow-400 text-yellow-700'
+        : 'bg-gray-100 border border-gray-300 text-gray-600'
+    }`}>
+      <span>Keranjang</span>
+      <span>
+        {cart.length} item
+        {isOverLimit
+          ? ` — akan dipecah jadi ${invoiceCount} invoice`
+          : ` / ${MAX_FAKTUR_ITEMS}`}
+      </span>
+    </div>
+  );
+})()}
 
 {/* CART */}
 {cart.map((item, index) => {
