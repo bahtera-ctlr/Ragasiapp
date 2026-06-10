@@ -1433,6 +1433,12 @@ export default function AdminSuperDashboard() {
     }
   };
 
+  const filteredUsers = useMemo(() => {
+    if (!userSearchQuery) return users;
+    const kw = userSearchQuery.toLowerCase();
+    return users.filter(u => u.name.toLowerCase().includes(kw) || u.email.toLowerCase().includes(kw));
+  }, [users, userSearchQuery]);
+
   if (authLoading || roleCheckLoading) {
     return <LoadingSpinner />;
   }
@@ -1440,12 +1446,6 @@ export default function AdminSuperDashboard() {
   if (!hasAccess) {
     return null;
   }
-
-  const filteredUsers = useMemo(() => {
-    if (!userSearchQuery) return users;
-    const kw = userSearchQuery.toLowerCase();
-    return users.filter(u => u.name.toLowerCase().includes(kw) || u.email.toLowerCase().includes(kw));
-  }, [users, userSearchQuery]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100">
