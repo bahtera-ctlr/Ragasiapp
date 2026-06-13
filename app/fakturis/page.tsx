@@ -17,6 +17,18 @@ import {
   FakturImage,
 } from '@/lib/faktur-images';
 
+type FakturInvoiceItem = {
+  product_name?: string;
+  nama_barang?: string;
+  name?: string;
+  customName?: string;
+  qty?: number;
+  quantity?: number;
+  price?: number;
+  subtotal?: number;
+  [key: string]: unknown;
+};
+
 type FakturInvoice = {
   id: string;
   amount?: number;
@@ -43,6 +55,7 @@ type FakturInvoice = {
   delivery_date?: string;
   packing_officer_name?: string;
   expedisi_officer_name?: string;
+  items?: FakturInvoiceItem[];
   [key: string]: unknown;
 };
 
@@ -593,9 +606,9 @@ export default function FakturisDashboard() {
                 <div className="rounded border border-gray-800 bg-amber-950 p-3">
                   <div className="text-xs uppercase tracking-wider text-amber-300 mb-1">Shipment Status</div>
                   <div className="text-gray-200 text-sm">
-                    {selectedInvoice.shipment_status === 'ready' ? '📦 Siap Kirim' : 
-                     selectedInvoice.shipment_status === 'planned' ? '📋 Rencana Kirim' : 
-                     selectedInvoice.shipment_status === 'completed' ? '✓ Selesai Kirim' : 
+                    {selectedInvoice.shipment_status === 'ready' ? '📦 Siap Kirim' :
+                     selectedInvoice.shipment_status === 'planned' ? '📋 Rencana Kirim' :
+                     selectedInvoice.shipment_status === 'completed' ? '✓ Selesai Kirim' :
                      selectedInvoice.shipment_status}
                     {selectedInvoice.expedisi_officer_name ? ` — Petugas: ${selectedInvoice.expedisi_officer_name}` : ''}
                   </div>
@@ -606,6 +619,42 @@ export default function FakturisDashboard() {
                   )}
                 </div>
               )}
+
+              {/* Daftar Barang */}
+              <div className="rounded border border-indigo-800 bg-indigo-950 p-3">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="text-xs uppercase tracking-wider text-indigo-300 font-bold">
+                    Daftar Barang {selectedInvoice.items && selectedInvoice.items.length > 0 ? `(${selectedInvoice.items.length} item)` : ''}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => generateInvoicePDF(selectedInvoice)}
+                    className="flex items-center gap-1 bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-semibold py-1 px-3 rounded transition-colors"
+                  >
+                    📄 Download PDF
+                  </button>
+                </div>
+                {!selectedInvoice.items || selectedInvoice.items.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">Tidak ada data barang</p>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto space-y-1 mt-1">
+                    {selectedInvoice.items.map((item, idx) => {
+                      const itemName = item.product_name || item.nama_barang || item.name || item.customName || '-';
+                      const qty = item.qty || item.quantity || 0;
+                      const subtotal = Number(item.subtotal || 0);
+                      return (
+                        <div key={idx} className="flex justify-between items-center py-1 border-b border-indigo-900 last:border-0">
+                          <span className="text-xs text-gray-200 flex-1 pr-2">{itemName}</span>
+                          <span className="text-xs text-indigo-300 mr-3">×{qty}</span>
+                          <span className="text-xs text-white font-semibold whitespace-nowrap">
+                            Rp {subtotal.toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             {selectedInvoice.faktur_verified_at && (
