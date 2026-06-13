@@ -43,7 +43,7 @@ export default function SalesPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedOutlet, setSelectedOutlet] = useState<Outlet | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [shippingRequest, setShippingRequest] = useState<'OTS' | 'REGULER' | 'EXPRESS'>('REGULER');
+  const [shippingRequest, setShippingRequest] = useState<'OTS' | 'REGULER ONGKIR' | 'REGULER FREE ONGKIR' | 'EXPRESS' | 'SAME DAY'>('REGULER ONGKIR');
   const [qty, setQty] = useState(1);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [outletSearch, setOutletSearch] = useState("");
@@ -806,7 +806,7 @@ function handleAddItem() {
     setSelectedOutlet(null);
     setProductSearch("");
     setSelectedProduct(null);
-    setShippingRequest('REGULER');
+    setShippingRequest('REGULER ONGKIR');
     setQty(1);
   }, 100);
 }
@@ -926,12 +926,14 @@ const productNormCache = useMemo(
           <label className="block mb-2 font-semibold">Request Pengiriman</label>
           <select
             value={shippingRequest}
-            onChange={(e) => setShippingRequest(e.target.value as 'OTS' | 'REGULER' | 'EXPRESS')}
+            onChange={(e) => setShippingRequest(e.target.value as 'OTS' | 'REGULER ONGKIR' | 'REGULER FREE ONGKIR' | 'EXPRESS' | 'SAME DAY')}
             className="w-full border rounded-lg p-3 bg-white"
           >
             <option value="OTS">OTS</option>
-            <option value="REGULER">REGULER</option>
+            <option value="REGULER ONGKIR">Reguler Ongkir</option>
+            <option value="REGULER FREE ONGKIR">Reguler Free Ongkir</option>
             <option value="EXPRESS">EXPRESS</option>
+            <option value="SAME DAY">Same Day</option>
           </select>
         </div>
 

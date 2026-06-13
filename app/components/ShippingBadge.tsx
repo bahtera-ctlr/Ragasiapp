@@ -12,13 +12,21 @@ const shippingConfig = {
     badgeColor: 'bg-red-600',
     description: 'Over Time Supply'
   },
-  'REGULER': {
-    label: 'REGULER',
+  'REGULER ONGKIR': {
+    label: 'Reguler Ongkir',
     bgColor: 'bg-blue-100',
     textColor: 'text-blue-800',
     borderColor: 'border-blue-300',
     badgeColor: 'bg-blue-600',
-    description: 'Regular Shipping'
+    description: 'Regular Shipping dengan Ongkir'
+  },
+  'REGULER FREE ONGKIR': {
+    label: 'Reguler Free Ongkir',
+    bgColor: 'bg-sky-100',
+    textColor: 'text-sky-800',
+    borderColor: 'border-sky-300',
+    badgeColor: 'bg-sky-500',
+    description: 'Regular Shipping Gratis Ongkir'
   },
   'EXPRESS': {
     label: 'EXPRESS',
@@ -27,7 +35,15 @@ const shippingConfig = {
     borderColor: 'border-green-300',
     badgeColor: 'bg-green-600',
     description: 'Express Shipping'
-  }
+  },
+  'SAME DAY': {
+    label: 'Same Day',
+    bgColor: 'bg-purple-100',
+    textColor: 'text-purple-800',
+    borderColor: 'border-purple-300',
+    badgeColor: 'bg-purple-600',
+    description: 'Same Day Delivery'
+  },
 };
 
 export default function ShippingBadge({ shippingRequest, size = 'md' }: ShippingBadgeProps) {
@@ -35,7 +51,7 @@ export default function ShippingBadge({ shippingRequest, size = 'md' }: Shipping
     return null;
   }
 
-  const config = shippingConfig[shippingRequest as keyof typeof shippingConfig];
+  const config = shippingConfig[shippingRequest.toUpperCase() as keyof typeof shippingConfig];
   if (!config) {
     return null;
   }
