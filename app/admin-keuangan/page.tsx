@@ -201,29 +201,6 @@ export default function AdminKeuanganDashboard() {
     }
   }, [reportGroupBy, tab, releasedInvoices]);
 
-  // Show loading while auth is checking
-  if (loading) {
-    return <LoadingSpinner />;
-  }
-
-  // Show access denied if user is authenticated but doesn't have access
-  if (!hasAccess || !user) {
-    return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold mb-4 text-red-500">🔒 Access Denied</h1>
-          <p className="text-gray-400 mb-8">Anda tidak memiliki akses ke halaman ini</p>
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded text-white transition"
-          >
-            Kembali ke Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const filteredProducts = useMemo(() => {
     if (!productSearch) return stagingProducts;
     const kw = productSearch.toLowerCase();
@@ -258,6 +235,29 @@ export default function AdminKeuanganDashboard() {
     () => filteredEmployees.slice(employeeStartIdx, employeeStartIdx + EMPLOYEE_ITEMS_PER_PAGE),
     [filteredEmployees, employeeStartIdx]
   );
+
+  // Show loading while auth is checking
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+
+  // Show access denied if user is authenticated but doesn't have access
+  if (!hasAccess || !user) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
+        <div className="text-center">
+          <h1 className="text-4xl font-bold mb-4 text-red-500">🔒 Access Denied</h1>
+          <p className="text-gray-400 mb-8">Anda tidak memiliki akses ke halaman ini</p>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded text-white transition"
+          >
+            Kembali ke Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleExportOutlets = async () => {
     setIsExporting(true);
@@ -612,8 +612,6 @@ Generated: ${new Date().toLocaleString('id-ID')}
     await logOut();
     router.push('/');
   };
-
-  if (loading || !hasAccess) return <LoadingSpinner />;
 
   return (
     <div className="min-h-screen bg-black text-white">
