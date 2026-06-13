@@ -277,13 +277,18 @@ export default function AdminSuperDashboard() {
   const [filterNamaBarang, setFilterNamaBarang] = useState('all');
   const [filterPrinciple, setFilterPrinciple] = useState('all');
   const [filterME, setFilterME] = useState('all');
-  
+  // Refs to track active filters so fetchInvoiceHistory can re-apply them after auth re-trigger
+  const filterOutletRef = useRef('all');
+  const filterNamaBarangRef = useRef('all');
+  const filterPrincipleRef = useRef('all');
+  const filterMERef = useRef('all');
+
   // Dropdown options for filters
   const [outletOptions, setOutletOptions] = useState<string[]>([]);
   const [namaBarangOptions, setNamaBarangOptions] = useState<string[]>([]);
   const [principleOptions, setPrincipleOptions] = useState<string[]>([]);
   const [meOptions, setMEOptions] = useState<string[]>([]);
-  
+
   const [invoiceCount, setInvoiceCount] = useState<number>(-1); // -1 = not yet loaded
   const [filteredInvoiceHistory, setFilteredInvoiceHistory] = useState<InvoiceHistory[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -717,7 +722,31 @@ export default function AdminSuperDashboard() {
       setNamaBarangOptions(result.namaBarang ?? []);
       setPrincipleOptions(result.principles ?? []);
       setMEOptions(result.mes ?? []);
-      setFilteredInvoiceHistory([]);
+
+      const hasActiveFilter =
+        filterOutletRef.current !== 'all' ||
+        filterNamaBarangRef.current !== 'all' ||
+        filterPrincipleRef.current !== 'all' ||
+        filterMERef.current !== 'all';
+
+      if (hasActiveFilter) {
+        setLoadingFilter(true);
+        try {
+          const filtered = await getFilteredInvoiceHistory({
+            outlet_name: filterOutletRef.current !== 'all' ? filterOutletRef.current : undefined,
+            nama_barang: filterNamaBarangRef.current !== 'all' ? filterNamaBarangRef.current : undefined,
+            principle: filterPrincipleRef.current !== 'all' ? filterPrincipleRef.current : undefined,
+            me: filterMERef.current !== 'all' ? filterMERef.current : undefined,
+          });
+          setFilteredInvoiceHistory(filtered.error ? [] : (filtered.data || []));
+        } catch {
+          setFilteredInvoiceHistory([]);
+        } finally {
+          setLoadingFilter(false);
+        }
+      } else {
+        setFilteredInvoiceHistory([]);
+      }
     } catch (error) {
       console.error('Error in fetchInvoiceHistory:', error);
       alert(`Exception in fetchInvoiceHistory: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -841,10 +870,10 @@ export default function AdminSuperDashboard() {
     let newME = filterME;
 
     switch (type) {
-      case 'outlet':      newOutlet = value;      setFilterOutlet(value);      break;
-      case 'namaBarang':  newNamaBarang = value;  setFilterNamaBarang(value);  break;
-      case 'principle':   newPrinciple = value;   setFilterPrinciple(value);   break;
-      case 'me':          newME = value;           setFilterME(value);          break;
+      case 'outlet':      newOutlet = value;      setFilterOutlet(value);      filterOutletRef.current = value;     break;
+      case 'namaBarang':  newNamaBarang = value;  setFilterNamaBarang(value);  filterNamaBarangRef.current = value; break;
+      case 'principle':   newPrinciple = value;   setFilterPrinciple(value);   filterPrincipleRef.current = value;  break;
+      case 'me':          newME = value;           setFilterME(value);          filterMERef.current = value;         break;
     }
 
     // When all filters cleared, show prompt instead of loading everything
@@ -894,6 +923,10 @@ export default function AdminSuperDashboard() {
         setFilterNamaBarang('all');
         setFilterPrinciple('all');
         setFilterME('all');
+        filterOutletRef.current = 'all';
+        filterNamaBarangRef.current = 'all';
+        filterPrincipleRef.current = 'all';
+        filterMERef.current = 'all';
       }
     } finally {
       setLoadingHistory(false);
