@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { UserRole } from '@/lib/auth';
 import { User } from '@supabase/supabase-js';
@@ -141,4 +141,28 @@ export function useRoleCheck(requiredRoles: UserRole[]) {
   );
 
   return { hasAccess, loading };
+}
+
+// Auto-refresh: polls every `intervalMs` ms AND refreshes when tab becomes visible again.
+// Pass `enabled: false` while auth is still loading to prevent fetching before user is ready.
+export function useAutoRefresh(
+  callback: () => void,
+  { intervalMs = 30000, enabled = true }: { intervalMs?: number; enabled?: boolean } = {}
+) {
+  const stableCallback = useCallback(callback, [callback]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const timer = setInterval(stableCallback, intervalMs);
+    const handleVisibility = () => {
+      if (!document.hidden) stableCallback();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [stableCallback, intervalMs, enabled]);
 }

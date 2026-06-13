@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getInvoices, updateInvoiceFakturStatus } from '@/lib/orders';
 import { generateInvoicePDF } from '@/lib/invoice-pdf';
 import { getEmployees, Employee } from '@/lib/employees';
-import { useAuth, useRoleCheck } from '@/lib/hooks';
+import { useAuth, useRoleCheck, useAutoRefresh } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
 import {
@@ -89,11 +89,27 @@ export default function FakturisDashboard() {
   const [imageError, setImageError] = useState('');
   const [dragActive, setDragActive] = useState(false);
 
+  const fetchInvoices = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const result = await getInvoices({ status: 'released' });
+      if (result.error) {
+        console.error('Error fetching invoices:', result.error);
+      } else {
+        setInvoices(result.data || []);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (loading || !hasAccess) return;
     fetchInvoices();
     fetchEmployees();
-  }, [loading, hasAccess]);
+  }, [loading, hasAccess, fetchInvoices]);
+
+  useAutoRefresh(fetchInvoices, { enabled: !loading && hasAccess });
 
   // Memoized filters — dihitung ulang hanya saat invoices berubah
   const belumDifakturkan = useMemo(
@@ -133,23 +149,6 @@ export default function FakturisDashboard() {
     );
   }
 
-  const fetchInvoices = async () => {
-    setIsLoading(true);
-    try {
-      const result = await getInvoices({ status: 'released' });
-      console.log('Fakturis fetching released invoices:', result);
-      console.log('Fakturis getInvoices result:', result);
-
-      if (result.error) {
-        console.error('Error fetching invoices:', result.error);
-      } else {
-        console.log('Invoices loaded:', result.data?.length || 0);
-        setInvoices(result.data || []);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const fetchEmployees = async () => {
     setLoadingEmployees(true);

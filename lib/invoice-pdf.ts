@@ -10,6 +10,7 @@ interface InvoiceItem {
   price?: number;
   harga?: number;
   customPrice?: number;
+  discount?: number;
   subtotal?: number;
   product?: { name?: string; price?: number };
   [key: string]: unknown;
@@ -29,6 +30,8 @@ interface InvoiceForPDF {
     me?: string;
     nio?: string;
     NIO?: string;
+    cluster?: string;
+    top_hari?: number;
     [key: string]: unknown;
   };
   [key: string]: unknown;
@@ -111,10 +114,11 @@ export function generateInvoicePDF(invoice: InvoiceForPDF): void {
     const leftW  = contentWidth * 0.55;
     const rightX = margin + leftW + 6;
     const rightW = contentWidth - leftW - 6;
+    const infoBoxH = 48;
 
-    // Outlet box
+    // Outlet box — 6 baris: name, NIO, ME, Cluster, Tempo, Status
     setFill(...GRAY_L); setDraw(...GRAY_L);
-    pdf.roundedRect(margin, y, leftW, 34, 2, 2, 'F');
+    pdf.roundedRect(margin, y, leftW, infoBoxH, 2, 2, 'F');
     setColor(...PRIMARY);
     pdf.setFontSize(7); pdf.setFont('helvetica', 'bold');
     pdf.text('KEPADA', margin + 4, y + 7);
@@ -123,13 +127,15 @@ export function generateInvoicePDF(invoice: InvoiceForPDF): void {
     pdf.text(outlet.name || '-', margin + 4, y + 14);
     pdf.setFontSize(8); pdf.setFont('helvetica', 'normal');
     setColor(...GRAY_M);
-    pdf.text(`NIO   : ${outlet.NIO || outlet.nio || '-'}`, margin + 4, y + 20);
-    pdf.text(`ME    : ${outlet.me || '-'}`, margin + 4, y + 26);
-    pdf.text(`Status: ${invoice.pb ? 'PB (Promo Bundling)' : 'Regular'}`, margin + 4, y + 32);
+    pdf.text(`NIO     : ${outlet.NIO || outlet.nio || '-'}`,               margin + 4, y + 21);
+    pdf.text(`ME      : ${outlet.me || '-'}`,                              margin + 4, y + 27);
+    pdf.text(`Cluster : ${outlet.cluster || '-'}`,                         margin + 4, y + 33);
+    pdf.text(`Tempo   : ${outlet.top_hari != null ? `${outlet.top_hari} hari` : '-'}`, margin + 4, y + 39);
+    pdf.text(`Status  : ${invoice.pb ? 'PB (Promo Bundling)' : 'Regular'}`,margin + 4, y + 45);
 
     // Invoice detail box
     setFill(...PRIMARY_L); setDraw(...PRIMARY_L);
-    pdf.roundedRect(rightX, y, rightW, 34, 2, 2, 'F');
+    pdf.roundedRect(rightX, y, rightW, infoBoxH, 2, 2, 'F');
     const infoRows = [
       ['No. Faktur', invoice.faktur_number || '-'],
       ['No. Order',  formatOrderIdForPDF(invoice.order_id)],
@@ -137,7 +143,7 @@ export function generateInvoicePDF(invoice: InvoiceForPDF): void {
       ['Fakturis',   invoice.faktur_officer_name || '-'],
     ];
     infoRows.forEach(([label, value], i) => {
-      const iy = y + 7 + i * 7;
+      const iy = y + 9 + i * 9;
       setColor(...PRIMARY);
       pdf.setFontSize(7); pdf.setFont('helvetica', 'bold');
       pdf.text(label, rightX + 4, iy);
@@ -146,15 +152,17 @@ export function generateInvoicePDF(invoice: InvoiceForPDF): void {
       pdf.text(String(value), rightX + rightW - 4, iy, { align: 'right' });
     });
 
-    y += 40;
+    y += infoBoxH + 6;
 
     // ── TABLE HEADER ─────────────────────────────────────────────
+    // Columns: No(8) | Nama Barang(72) | Qty(14) | Harga(28) | Diskon(22) | Subtotal(38)
     const COL = {
-      no:    { x: margin,       w: 8  },
-      name:  { x: margin + 8,   w: 82 },
-      qty:   { x: margin + 90,  w: 18 },
-      price: { x: margin + 108, w: 34 },
-      sub:   { x: margin + 142, w: contentWidth - 142 },
+      no:       { x: margin,           w: 8  },
+      name:     { x: margin + 8,       w: 72 },
+      qty:      { x: margin + 80,      w: 14 },
+      price:    { x: margin + 94,      w: 28 },
+      discount: { x: margin + 122,     w: 22 },
+      sub:      { x: margin + 144,     w: contentWidth - 144 },
     };
 
     const drawTableHeader = (yy: number) => {
@@ -162,11 +170,12 @@ export function generateInvoicePDF(invoice: InvoiceForPDF): void {
       pdf.rect(margin, yy, contentWidth, 8, 'F');
       setColor(...WHITE);
       pdf.setFontSize(8); pdf.setFont('helvetica', 'bold');
-      pdf.text('No',          COL.no.x + 1,               yy + 5.5);
-      pdf.text('Nama Barang', COL.name.x + 1,             yy + 5.5);
-      pdf.text('Qty',         COL.qty.x + COL.qty.w,      yy + 5.5, { align: 'right' });
-      pdf.text('Harga',       COL.price.x + COL.price.w,  yy + 5.5, { align: 'right' });
-      pdf.text('Subtotal',    COL.sub.x + COL.sub.w,      yy + 5.5, { align: 'right' });
+      pdf.text('No',          COL.no.x + 1,                    yy + 5.5);
+      pdf.text('Nama Barang', COL.name.x + 1,                  yy + 5.5);
+      pdf.text('Qty',         COL.qty.x + COL.qty.w,           yy + 5.5, { align: 'right' });
+      pdf.text('Harga',       COL.price.x + COL.price.w,       yy + 5.5, { align: 'right' });
+      pdf.text('Diskon',      COL.discount.x + COL.discount.w, yy + 5.5, { align: 'right' });
+      pdf.text('Subtotal',    COL.sub.x + COL.sub.w,           yy + 5.5, { align: 'right' });
       return yy + 8;
     };
 
@@ -178,7 +187,8 @@ export function generateInvoicePDF(invoice: InvoiceForPDF): void {
       const itemName = item.product_name || item.nama_barang || item.name || item.customName || item.product?.name || '-';
       const qty      = item.qty || item.quantity || 0;
       const price    = item.price || item.harga || item.product?.price || item.customPrice || 0;
-      const subtotal = item.subtotal || qty * price;
+      const discount = item.discount || 0;
+      const subtotal = item.subtotal ?? (qty * price - discount);
       total += subtotal;
 
       const nameLines = pdf.splitTextToSize(itemName, COL.name.w - 2);
@@ -200,10 +210,21 @@ export function generateInvoicePDF(invoice: InvoiceForPDF): void {
       nameLines.forEach((line: string, li: number) => {
         pdf.text(line, COL.name.x + 1, y + 5 + li * 4.5);
       });
-      pdf.text(`${qty}`,    COL.qty.x + COL.qty.w,     y + 5, { align: 'right' });
-      pdf.text(rp(price),   COL.price.x + COL.price.w, y + 5, { align: 'right' });
+      pdf.text(`${qty}`,  COL.qty.x + COL.qty.w,           y + 5, { align: 'right' });
+      pdf.text(rp(price), COL.price.x + COL.price.w,       y + 5, { align: 'right' });
+
+      if (discount > 0) {
+        setColor(220, 50, 50);
+        pdf.text(`-${rp(discount)}`, COL.discount.x + COL.discount.w, y + 5, { align: 'right' });
+        setColor(...GRAY_D);
+      } else {
+        setColor(...GRAY_M);
+        pdf.text('-', COL.discount.x + COL.discount.w, y + 5, { align: 'right' });
+        setColor(...GRAY_D);
+      }
+
       pdf.setFont('helvetica', 'bold');
-      pdf.text(rp(subtotal), COL.sub.x + COL.sub.w,   y + 5, { align: 'right' });
+      pdf.text(rp(subtotal), COL.sub.x + COL.sub.w, y + 5, { align: 'right' });
       pdf.setFont('helvetica', 'normal');
 
       setDraw(220, 220, 220); pdf.setLineWidth(0.2);

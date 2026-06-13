@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getReadyToShipInvoices, getPlannedShipments, getCompletedShipments, planShipment, updateShipmentDelivery } from '@/lib/orders';
 import { uploadDeliveryImage, getDeliveryImages, type DeliveryImage } from '@/lib/delivery-images';
-import { useAuth, useRoleCheck } from '@/lib/hooks';
+import { useAuth, useRoleCheck, useAutoRefresh } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
 
@@ -113,6 +113,25 @@ export default function PetugasExpedisiDashboard() {
     if (loading || !hasAccess) return;
     fetchData();
   }, [loading, hasAccess, fetchData]);
+
+  useAutoRefresh(fetchData, { enabled: !loading && hasAccess });
+
+  // Filter functions
+  const filterInvoices = (invoices: LogisticsInvoice[], search: string) => {
+    if (!search.trim()) return invoices;
+    const query = search.toLowerCase();
+    return invoices.filter(invoice => {
+      const outletName = invoice.outlet?.name?.toLowerCase() || '';
+      const orderId = invoice.order_id?.slice(0, 8).toUpperCase() || '';
+      const officerName = (invoice.packing_officer_name || invoice.expedisi_officer_name || '').toLowerCase();
+      const amount = invoice.amount?.toString() || '';
+      return outletName.includes(query) || orderId.includes(query) || officerName.includes(query) || amount.includes(query);
+    });
+  };
+
+  const filteredReadyToShip = useMemo(() => filterInvoices(readyToShip, searchReady), [readyToShip, searchReady]);
+  const filteredPlannedShipments = useMemo(() => filterInvoices(plannedShipments, searchPlanned), [plannedShipments, searchPlanned]);
+  const filteredCompletedShipments = useMemo(() => filterInvoices(completedShipments, searchCompleted), [completedShipments, searchCompleted]);
 
   // Show loading while auth is checking
   if (loading) {
@@ -377,25 +396,6 @@ export default function PetugasExpedisiDashboard() {
     await logOut();
     router.push('/');
   };
-
-  // Filter functions
-  const filterInvoices = (invoices: LogisticsInvoice[], search: string) => {
-    if (!search.trim()) return invoices;
-    const query = search.toLowerCase();
-    return invoices.filter(invoice => {
-      const outletName = invoice.outlet?.name?.toLowerCase() || '';
-      const orderId = invoice.order_id?.slice(0, 8).toUpperCase() || '';
-      const officerName = (invoice.packing_officer_name || invoice.expedisi_officer_name || '').toLowerCase();
-      const amount = invoice.amount?.toString() || '';
-      return outletName.includes(query) || orderId.includes(query) || officerName.includes(query) || amount.includes(query);
-    });
-  };
-
-  const filteredReadyToShip = useMemo(() => filterInvoices(readyToShip, searchReady), [readyToShip, searchReady]);
-  const filteredPlannedShipments = useMemo(() => filterInvoices(plannedShipments, searchPlanned), [plannedShipments, searchPlanned]);
-  const filteredCompletedShipments = useMemo(() => filterInvoices(completedShipments, searchCompleted), [completedShipments, searchCompleted]);
-
-  if (loading || !hasAccess) return <LoadingSpinner />;
 
   return (
     <div className="min-h-screen bg-black text-white">

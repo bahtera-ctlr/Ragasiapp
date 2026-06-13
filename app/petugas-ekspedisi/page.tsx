@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { logOut } from '@/lib/auth';
 import { getCompletedShipments } from '@/lib/orders';
-import { useAuth, useRoleCheck } from '@/lib/hooks';
+import { useAuth, useRoleCheck, useAutoRefresh } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
 
@@ -57,6 +57,20 @@ export default function PetugasExpedisiDashboard() {
     fetchData();
   }, [loading, hasAccess, fetchData]);
 
+  useAutoRefresh(fetchData, { enabled: !loading && hasAccess });
+
+  const filteredShipments = useMemo(() => {
+    if (!searchQuery.trim()) return completedShipments;
+    const query = searchQuery.toLowerCase();
+    return completedShipments.filter(invoice => {
+      const outletName = invoice.outlet?.name?.toLowerCase() || '';
+      const orderId = invoice.order_id?.slice(0, 8).toUpperCase() || '';
+      const officerName = (invoice.expedisi_officer_name || '').toLowerCase();
+      const amount = invoice.amount?.toString() || '';
+      return outletName.includes(query) || orderId.includes(query) || officerName.includes(query) || amount.includes(query);
+    });
+  }, [completedShipments, searchQuery]);
+
   // Show loading while auth is checking
   if (loading) {
     return <LoadingSpinner />;
@@ -84,18 +98,6 @@ export default function PetugasExpedisiDashboard() {
     await logOut();
     router.push('/');
   };
-
-  const filteredShipments = useMemo(() => {
-    if (!searchQuery.trim()) return completedShipments;
-    const query = searchQuery.toLowerCase();
-    return completedShipments.filter(invoice => {
-      const outletName = invoice.outlet?.name?.toLowerCase() || '';
-      const orderId = invoice.order_id?.slice(0, 8).toUpperCase() || '';
-      const officerName = (invoice.expedisi_officer_name || '').toLowerCase();
-      const amount = invoice.amount?.toString() || '';
-      return outletName.includes(query) || orderId.includes(query) || officerName.includes(query) || amount.includes(query);
-    });
-  }, [completedShipments, searchQuery]);
 
   return (
     <div className="min-h-screen bg-black text-white">

@@ -7,9 +7,10 @@ import { logOut } from '@/lib/auth';
 import { getInvoicesByMarketing, updateInvoice, getPendingInvoicesByMarketing } from '@/lib/orders';
 import { getOutlets } from '@/lib/export';
 import type { ExportRow } from '@/lib/export';
-import { useAuth, useRoleCheck } from '@/lib/hooks';
+import { useAuth, useRoleCheck, useAutoRefresh } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
+import { generateInvoicePDF } from '@/lib/invoice-pdf';
 import { getFakturImages, FakturImage } from '@/lib/faktur-images';
 import { createDiscountRequest, getDiscountRequests, type DiscountRequest, getInvoiceFilterOptionsReadOnly, getFilteredInvoiceHistoryReadOnly, type InvoiceHistory } from '@/lib/discount-requests';
 import { getSalesReport } from '@/lib/sales-report';
@@ -19,10 +20,12 @@ type MarketingInvoice = {
   amount?: number;
   notes?: string;
   pb?: boolean;
-  outlet?: { name?: string; NIO?: string };
+  outlet?: { name?: string; NIO?: string; nio?: string; me?: string; cluster?: string; top_hari?: number };
   invoice_number?: string;
+  faktur_number?: string;
   order_created_at?: string;
   created_at?: string;
+  released_at?: string;
   status?: string;
   logistik_in_status?: string;
   packing_officer_name?: string;
@@ -42,6 +45,7 @@ type MarketingInvoice = {
   shipment_date?: string;
   delivery_notes?: string;
   delivery_date?: string;
+  items?: Array<{ product_name?: string; qty?: number; price?: number; discount?: number; subtotal?: number; [key: string]: unknown }>;
 };
 
 type Product = {
@@ -620,6 +624,8 @@ export default function MarketingDashboard() {
     }
   }, [loading, hasAccess, user, tab, showDiscountRequestModal]);
 
+  useAutoRefresh(fetchOrders, { enabled: !loading && hasAccess && !!user });
+
   // Show loading while auth is checking
   if (loading) {
     return <LoadingSpinner />;
@@ -719,68 +725,7 @@ export default function MarketingDashboard() {
   };
 
   const handleDownloadPDF = (invoice: MarketingInvoice) => {
-    // Generate invoice content with proper formatting
-    const orderDate = new Date(invoice.order_created_at || invoice.created_at || Date.now());
-    const formattedDate = orderDate.toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
-    const formattedTime = orderDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-
-    const pdfContent = `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                    INVOICE DETAILS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-ORDER ID      : ${invoice.order_id}
-INVOICE #     : ${invoice.invoice_number}
-
-OUTLET NAME   : ${invoice.outlet?.name || invoice.outlet_id}
-NIO           : ${invoice.outlet?.NIO || '-'}
-
-TANGGAL PESAN : ${formattedDate}
-JAM PESAN     : ${formattedTime}
-
-STATUS        : ${invoice.status === 'released' ? 'RELEASED' : 
-                  invoice.status === 'rejected' ? 'REJECTED' : 
-                  invoice.status === 'paid' ? 'PAID' : 
-                  (invoice.status || 'UNKNOWN').toUpperCase()}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-JUMLAH        : Rp ${invoice.amount?.toLocaleString('id-ID') || 0}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-CATATAN KEUANGAN:
-${invoice.keuangan_notes || '(Tidak ada catatan)'}
-
-${invoice.logistik_in_status ? `
-CATATAN PACKING:
-Status: ${invoice.logistik_in_status === 'terpacking' ? 'SUDAH TERPACKING' : 'MENUNGGU PACKING'}
-Petugas: ${invoice.packing_officer_name || '-'}
-Catatan: ${invoice.packing_notes || '-'}
-` : ''}
-
-${invoice.faktur_status ? `
-CATATAN FAKTUR:
-Status: ${invoice.faktur_status === 'terfaktur' ? 'SUDAH TERFAKTUR' : 'MENUNGGU FAKTUR'}
-Petugas: ${invoice.faktur_officer_name || '-'}
-Catatan: ${invoice.faktur_notes || '-'}
-` : ''}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Generated: ${new Date().toLocaleString('id-ID')}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    `.trim();
-
-    // Create blob and download
-    const blob = new Blob([pdfContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Invoice-${invoice.invoice_number}-${new Date().getTime()}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    generateInvoicePDF(invoice);
   };
 
   const handleShareWhatsApp = (invoice: MarketingInvoice) => {

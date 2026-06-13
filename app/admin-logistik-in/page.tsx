@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/hooks';
+import { useAuth, useAutoRefresh } from '@/lib/hooks';
 import { getReleasedInvoices, updateInvoicePackingStatus } from '@/lib/orders';
 import { getEmployees, Employee } from '@/lib/employees';
 import { PageHeader } from '@/app/components/UIComponents';
@@ -110,39 +110,30 @@ export default function AdminLogisticInPage() {
     getEmployeeLabel(emp).toLowerCase().includes(expedisiOfficerSearch.toLowerCase())
   );
 
-  useEffect(() => {
-    console.log('useEffect triggered - user:', user);
-    if (!user) {
-      console.log('No user found - this might happen during initial auth check. User will redirect if still null after auth completes.');
-      return;
-    }
-    console.log('User found, fetching data');
-    fetchInvoices();
-    fetchEmployees();
-  }, [user, router, currentTab]);
-
-  const fetchInvoices = async () => {
+  const fetchInvoices = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
-      console.log('Fetching released invoices...');
       const { data, error } = await getReleasedInvoices();
-      console.log('getReleasedInvoices result:', { data, error });
-      
       if (error) {
-        console.error('Error from getReleasedInvoices:', error);
         setError(error);
       } else {
-        console.log('Invoices loaded successfully:', data?.length || 0);
         setInvoices(data || []);
       }
     } catch (err) {
-      console.error('Unexpected error in fetchInvoices:', err);
       setError(String(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchInvoices();
+    fetchEmployees();
+  }, [user, router, currentTab, fetchInvoices]);
+
+  useAutoRefresh(fetchInvoices, { enabled: !!user });
 
   const fetchEmployees = async () => {
     try {

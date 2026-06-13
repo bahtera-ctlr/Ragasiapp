@@ -9,7 +9,7 @@ import { uploadStagingProducts, getStagingProducts, parseCsvData } from '@/lib/p
 import { getInvoices, releaseInvoice, rejectInvoice } from '@/lib/orders';
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee, Employee } from '@/lib/employees';
 import { getReleasedInvoicesReport, calculateGroupedSum, exportInvoicesToCSV, downloadCSV, ReleasedInvoiceReport } from '@/lib/invoice-report';
-import { useAuth, useRoleCheck } from '@/lib/hooks';
+import { useAuth, useRoleCheck, useAutoRefresh } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
 
@@ -192,6 +192,8 @@ export default function AdminKeuanganDashboard() {
     if (loading || !hasAccess) return;
     fetchData();
   }, [loading, hasAccess, fetchData]);
+
+  useAutoRefresh(fetchData, { enabled: !loading && hasAccess });
 
   // Re-fetch report data when groupBy changes
   useEffect(() => {
