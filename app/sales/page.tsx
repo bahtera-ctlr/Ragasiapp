@@ -331,12 +331,12 @@ function calculateSimilarity(input: string, productName: string): number {
 // Satuan DOSIS/UKURAN: angka sebelumnya adalah bagian dari nama produk (bukan qty)
 const DOSAGE_UNIT = /^(?:mg|ml|mcg|iu|gr?|kg|cc|cm|mm|inch|in)$/i;
 // Satuan KUANTITAS: angka sebelumnya ADALAH qty (diperluas dengan keyword box)
-const QTY_UNIT_RE = /^(?:box|boc|bov|bog|bqll|bwll|bju|ball|pcs|btl|botol|sachet|sach|strip|str|tab(?:let)?|kaps?(?:ul)?|bls|blstr|biji|unit|lembar|pak(?:et)?|dus|karton|slop|lusin|lsn|selusin|roll|tube|tubr|tubd|tbr|amp|vial)$/i;
+const QTY_UNIT_RE = /^(?:box|boc|bov|bog|bqll|bwll|bju|ball|bx|bk|bok|kotak|pcs|btl|botol|sachet|sach|strip|str|tab(?:let)?|kaps?(?:ul)?|bls|blstr|biji|unit|lembar|pak(?:et)?|dus|karton|slop|lusin|lsn|selusin|roll|tube|tubr|tubd|tbr|amp|vial)$/i;
 // Regex untuk angka yang langsung menempel ke satuan (tanpa spasi): "1boc", "3btl", "10tube"
-const GLUED_QTY = /(\d+)(boc|bov|bog|bqll|bwll|bju|ball|box|pcs|btl|botol|sachet|sach|strip|str|tablet|kapsul|kap|bls|biji|unit|slop|dus|pak|roll|tube|tubr|tubd|tbr|amp|vial|lsn)/i;
+const GLUED_QTY = /(\d+)(boc|bov|bog|bqll|bwll|bju|ball|box|bx|bk|bok|kotak|pcs|btl|botol|sachet|sach|strip|str|tablet|kapsul|kap|bls|biji|unit|slop|dus|pak|roll|tube|tubr|tubd|tbr|amp|vial|lsn)/i;
 
 // Klasifikasi unit type untuk keperluan diskon
-const BOX_UNIT_RE = /^(?:boc|bov|bog|bqll|bwll|bju|ball|box|pak(?:et)?|bx|dus|karton)$/i;
+const BOX_UNIT_RE = /^(?:boc|bov|bog|bqll|bwll|bju|ball|box|pak(?:et)?|bx|bk|bok|kotak|dus|karton)$/i;
 const STRIP_UNIT_RE = /^(?:str|strip|bls|blstr|blister|tab(?:let)?|kaps?(?:ul)?)$/i;
 
 function detectUnitType(unitToken: string): 'box' | 'satuan' | 'strip' {
@@ -414,7 +414,7 @@ function parseBulkLine(line: string): { name: string; qty: number; unitType: 'bo
 
   // Remove chosen number AND any qty unit word from the name
   let name = (cleaned.slice(0, chosen.start) + cleaned.slice(chosen.start + chosen.len))
-    .replace(/\b(?:boc|bov|bog|bqll|bwll|bju|ball|box|pcs|btl|botol|sachet|sach|strip|str|tablet|kapsul|kap|bls|biji|unit|lembar|pak|paket|dus|karton|slop|lusin|lsn|roll|tube|tubr|tubd|tbr|amp|vial)\b/gi, '')
+    .replace(/\b(?:boc|bov|bog|bqll|bwll|bju|ball|box|bx|bk|bok|kotak|pcs|btl|botol|sachet|sach|strip|str|tablet|kapsul|kap|bls|biji|unit|lembar|pak|paket|dus|karton|slop|lusin|lsn|roll|tube|tubr|tubd|tbr|amp|vial)\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -1358,7 +1358,17 @@ const productNormCache = useMemo(
                     type="number"
                     min="1"
                     value={editQty}
-                    onChange={(e) => setEditQty(Number(e.target.value))}
+                    onChange={(e) => {
+                      const newQty = Number(e.target.value);
+                      setEditQty(newQty);
+                      // Recalculate discount sesuai qty baru (hanya untuk produk regular)
+                      if (selectedOutlet && !isCustom) {
+                        const productForDiscount = editProduct || item.product;
+                        if (productForDiscount) {
+                          setEditDiscount(getDiscount(selectedOutlet.cluster, productForDiscount, newQty));
+                        }
+                      }
+                    }}
                     className="w-full border border-gray-300 rounded-lg p-3 text-lg"
                   />
                 </div>
