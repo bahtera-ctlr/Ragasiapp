@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "ragasiapp",
-  description: "Sistem Manajemen Distribusi PT. Ragasi",
+  description: "Sistem Manajemen Distribusi - PT. Ragasi",
 };
 
 export default function RootLayout({
