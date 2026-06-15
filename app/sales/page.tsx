@@ -448,6 +448,13 @@ function handleBulkAdd() {
   const autocorrected: { input: string; matched: string }[] = [];
   let successCount = 0;
 
+  // Kumpulkan semua item dalam urutan yang sama seperti teks bulk
+  type BulkCartItem =
+    | { isCustom: false; product: NonNullable<typeof products[0]>; qty: number }
+    | { isCustom: true; customName: string; qty: number };
+
+  const orderedItems: BulkCartItem[] = [];
+
   lines.forEach((line) => {
     const parsed = parseBulkLine(line);
     if (!parsed) return;
@@ -475,36 +482,8 @@ function handleBulkAdd() {
     }
 
     if (found) {
-      // Jika unit box → kalikan dengan isi_box produk
-      const qty = unitType === 'box'
-        ? rawQty * (found.isi_box || 1)
-        : rawQty;
-
-      setCart((prev) => {
-        // Jika produk sudah ada di cart → tambahkan qty
-        const existing = prev.find(
-          (item) => !item.isCustom && item.product && item.product.id === found.id
-        );
-
-        if (existing) {
-          const newQty = existing.qty + qty;
-          const newDiscount = getDiscount(selectedOutlet.cluster, found, newQty);
-          const newSubtotal = newQty * (found.price - (found.price * newDiscount) / 100);
-          return prev.map((item) =>
-            !item.isCustom && item.product && item.product.id === found.id
-              ? { ...item, qty: newQty, discount: newDiscount, subtotal: newSubtotal }
-              : item
-          );
-        }
-
-        const discount = getDiscount(selectedOutlet.cluster, found, qty);
-        const subtotal = qty * (found.price - (found.price * discount) / 100);
-
-        return [
-          ...prev,
-          { product: found, qty, discount, subtotal },
-        ];
-      });
+      const qty = unitType === 'box' ? rawQty * (found.isi_box || 1) : rawQty;
+      orderedItems.push({ isCustom: false, product: found, qty });
       successCount++;
     } else {
       // Suggestions for not-found items (score 45–71)
@@ -515,8 +494,46 @@ function handleBulkAdd() {
         .slice(0, 3)
         .map((p) => p.name);
 
-      notFound.push({ name: productName, qty, suggestions });
+      notFound.push({ name: productName, qty: rawQty, suggestions });
+      orderedItems.push({ isCustom: true, customName: `${productName} (Tidak Tersedia)`, qty: rawQty });
     }
+  });
+
+  // Satu kali setCart — urutan sesuai teks bulk, produk duplikat di-merge in-place
+  setCart((prev) => {
+    const updatedPrev = [...prev];
+    const toAppend: typeof prev = [];
+
+    for (const item of orderedItems) {
+      if (!item.isCustom) {
+        const existingIdx = updatedPrev.findIndex(
+          (c) => !c.isCustom && c.product && c.product.id === item.product.id
+        );
+        if (existingIdx !== -1) {
+          const existing = updatedPrev[existingIdx];
+          const newQty = existing.qty + item.qty;
+          const newDiscount = getDiscount(selectedOutlet.cluster, item.product, newQty);
+          const newSubtotal = newQty * (item.product.price - (item.product.price * newDiscount) / 100);
+          updatedPrev[existingIdx] = { ...existing, qty: newQty, discount: newDiscount, subtotal: newSubtotal };
+        } else {
+          const discount = getDiscount(selectedOutlet.cluster, item.product, item.qty);
+          const subtotal = item.qty * (item.product.price - (item.product.price * discount) / 100);
+          toAppend.push({ product: item.product, qty: item.qty, discount, subtotal });
+        }
+      } else {
+        toAppend.push({
+          product: null,
+          customName: item.customName,
+          customPrice: 0,
+          qty: item.qty,
+          discount: 0,
+          subtotal: 0,
+          isCustom: true,
+        });
+      }
+    }
+
+    return [...updatedPrev, ...toAppend];
   });
 
   // Show autocorrection summary (one notification, not per-item)
@@ -527,21 +544,7 @@ function handleBulkAdd() {
     showNotification(`${autocorrected.length} nama dicocokkan otomatis:\n${msg}`, "info");
   }
 
-  // Auto-add not-found items as custom items
   if (notFound.length > 0) {
-    setCart((prev) => {
-      const customItems = notFound.map((item) => ({
-        product: null,
-        customName: `${item.name} (Tidak Tersedia)`,
-        customPrice: 0,
-        qty: item.qty,
-        discount: 0,
-        subtotal: 0,
-        isCustom: true,
-      }));
-      return [...prev, ...customItems];
-    });
-
     let message = `${notFound.length} item tidak ditemukan (Masuk ke Recap Barang Kosong):\n`;
     notFound.forEach((item) => {
       message += `\n• "${item.name}"`;
@@ -549,7 +552,6 @@ function handleBulkAdd() {
         message += `\n  Mirip dengan: ${item.suggestions.join(", ")}`;
       }
     });
-
     showNotification(message, "info");
   }
 
