@@ -11,7 +11,10 @@
       "Bash(sed -n '153,175p' /Users/bahterarizkyananda/Desktop/ragasiapp/app/petugas-ekspedisi/page.tsx)",
       "Bash(grep -n \"^\\\\s*\\\\\\)}\\\\s*$\\\\|^\\\\s*}\\\\s*\\)\\\\s*$\" /Users/bahterarizkyananda/Desktop/ragasiapp/app/admin-super/page.tsx)",
       "Bash(npm install *)",
-      "Bash(grep -E \"^xlsx$|^jszip$\")"
+      "Bash(grep -E \"^xlsx$|^jszip$\")",
+      "Bash(vercel --version)",
+      "Bash(grep -n \"x \\\\${.*qty\\\\|qty.*}\\\\|item\\\\.qty\\\\|cart.*qty\\\\|\\\\.qty}\" /Users/bahterarizkyananda/Desktop/ragasiapp/app/sales/page.tsx)",
+      "Bash(grep -n \"Diskon\\\\|Subtotal\\\\|x \\\\${\" /Users/bahterarizkyananda/Desktop/ragasiapp/app/sales/page.tsx)"
     ]
   }
 }
