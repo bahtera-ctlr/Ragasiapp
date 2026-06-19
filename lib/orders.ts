@@ -153,13 +153,13 @@ export async function updateOrder(orderId: string, input: UpdateOrderInput) {
 // DELETE ORDER
 export async function deleteOrder(orderId: string) {
   try {
-    const { error } = await supabase.from('orders').delete().eq('id', orderId);
-
-    if (error) {
-      return { error: error.message };
-    }
-
-    return { error: null };
+    const res = await fetch('/api/admin/delete-order', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: orderId }),
+    });
+    const json = await res.json();
+    return { error: json.error || null };
   } catch (error) {
     return { error: String(error) };
   }
@@ -1114,8 +1114,9 @@ export async function deleteAllInvoices() {
 
 export async function deleteAllOrders() {
   try {
-    const { error } = await supabase.from('orders').delete().not('id', 'is', null);
-    return { error: error?.message || null };
+    const res = await fetch('/api/admin/delete-all-orders', { method: 'DELETE' });
+    const json = await res.json();
+    return { error: json.error || null };
   } catch (error) {
     return { error: String(error) };
   }
