@@ -12,6 +12,7 @@ import { getReleasedInvoicesReport, calculateGroupedSum, exportInvoicesToCSV, do
 import { useAuth, useRoleCheck, useAutoRefresh } from '@/lib/hooks';
 import { LoadingSpinner, PageHeader } from '@/app/components/UIComponents';
 import ShippingBadge from '@/app/components/ShippingBadge';
+import InvoiceAgingTable from '@/app/components/InvoiceAgingTable';
 
 type KeuanganInvoice = {
   id?: string;
@@ -42,7 +43,7 @@ export default function AdminKeuanganDashboard() {
   const [outlets, setOutlets] = useState<Record<string, unknown>[]>([]);
   const [invoices, setInvoices] = useState<KeuanganInvoice[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [tab, setTab] = useState<'outlets' | 'outlet-import' | 'invoices' | 'master-data-barang' | 'daftar-karyawan' | 'laporan-penjualan'>('outlets');
+  const [tab, setTab] = useState<'outlets' | 'outlet-import' | 'invoices' | 'master-data-barang' | 'daftar-karyawan' | 'laporan-penjualan' | 'cek-faktur'>('outlets');
   const [isExporting, setIsExporting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [releaseLoading, setReleaseLoading] = useState(false);
@@ -742,7 +743,32 @@ Generated: ${new Date().toLocaleString('id-ID')}
           >
             📊 Laporan Penjualan
           </button>
+          <button
+            onClick={() => {
+              setTab('cek-faktur');
+              setOutletSearchQuery('');
+              setInvoiceSearchQuery('');
+            }}
+            className={`py-2 px-4 rounded-lg font-medium transition-colors ${
+              tab === 'cek-faktur'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            📋 Cek Faktur
+          </button>
         </div>
+
+        {/* Cek Faktur Tab */}
+        {tab === 'cek-faktur' && (
+          <div>
+            <PageHeader
+              title="Cek Faktur"
+              subtitle="Upload & kelola data usia faktur piutang seluruh outlet"
+            />
+            <InvoiceAgingTable canUpload={true} />
+          </div>
+        )}
 
         {/* Outlets Tab */}
         {tab === 'outlets' && (

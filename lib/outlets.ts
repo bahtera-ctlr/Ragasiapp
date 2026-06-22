@@ -16,7 +16,7 @@ export interface OutletData {
  * Helper function to parse number with Indonesian format support
  * Handles both "1.000,50" (Indonesian) and "1000.50" (English) and "-" or empty
  */
-function parseNumber(value: string | number | null | undefined): number | undefined {
+export function parseNumber(value: string | number | null | undefined): number | undefined {
   try {
     if (value === null || value === undefined || value === '' || value === '-' || value === 'Rp -') {
       return undefined;

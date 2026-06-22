@@ -14,6 +14,7 @@ import { generateInvoicePDF } from '@/lib/invoice-pdf';
 import { getFakturImages, FakturImage } from '@/lib/faktur-images';
 import { createDiscountRequest, getDiscountRequests, type DiscountRequest, getInvoiceFilterOptionsReadOnly, getFilteredInvoiceHistoryReadOnly, type InvoiceHistory } from '@/lib/discount-requests';
 import { getSalesReport } from '@/lib/sales-report';
+import InvoiceAgingTable from '@/app/components/InvoiceAgingTable';
 
 type MarketingInvoice = {
   id: string;
@@ -164,7 +165,7 @@ export default function MarketingDashboard() {
   const { user, userProfile, loading } = useAuth();
   const { hasAccess } = useRoleCheck(['marketing', 'super_admin']);
 
-  const [tab, setTab] = useState<'sales' | 'invoices' | 'pengajuan-diskon' | 'pengajuan-limit' | 'data-outlet' | 'historis-pengambilan' | 'report-sales'>('sales');
+  const [tab, setTab] = useState<'sales' | 'invoices' | 'pengajuan-diskon' | 'pengajuan-limit' | 'data-outlet' | 'historis-pengambilan' | 'report-sales' | 'cek-faktur'>('sales');
   const [pendingInvoices, setPendingInvoices] = useState<MarketingInvoice[]>([]);
   const [invoices, setInvoices] = useState<MarketingInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -842,6 +843,7 @@ Terima kasih!
             { key: 'data-outlet', label: '🏪 Outlet', color: 'purple' },
             { key: 'historis-pengambilan', label: '📈 Historis', color: 'purple' },
             { key: 'report-sales', label: '📊 Report Sales', color: 'green' },
+            { key: 'cek-faktur', label: '🧾 Cek Faktur', color: 'green' },
           ] as const).map(({ key, label, color }) => (
             <button
               key={key}
@@ -1679,6 +1681,14 @@ Terima kasih!
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {tab === 'cek-faktur' && (
+          <div>
+            <h2 className="text-lg sm:text-2xl font-bold text-white mb-1">🧾 Cek Faktur</h2>
+            <p className="text-gray-400 text-xs sm:text-sm mb-4">Filter faktur piutang per outlet &amp; konfirmasi yang sudah lewat jatuh tempo</p>
+            <InvoiceAgingTable canUpload={false} />
           </div>
         )}
       </main>

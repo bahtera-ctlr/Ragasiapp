@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { InvoiceAgingRow, computeUmurFaktur, computeHariOverdue } from './invoice-aging';
 
 export type ExportRow = {
   [key: string]: string | number | null | undefined;
@@ -92,6 +93,66 @@ export function exportOutletsToCSV(outlets: ExportRow[]) {
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
   const fileName = `outlets_${new Date().toISOString().split('T')[0]}.csv`;
+
+  link.setAttribute('href', url);
+  link.setAttribute('download', fileName);
+  link.style.visibility = 'hidden';
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+// EXPORT INVOICE AGING (CEK FAKTUR) TO CSV
+export function exportInvoiceAgingToCSV(rows: InvoiceAgingRow[]) {
+  if (!rows || rows.length === 0) {
+    console.error('No data to export');
+    return;
+  }
+
+  const data = rows.map(row => {
+    const hariOverdue = computeHariOverdue(row.tgl_japo);
+    return {
+      'Sales': row.sales || '-',
+      'PIC': row.pic || '-',
+      'Kecamatan': row.kecamatan || '-',
+      'No Outlet': row.no_outlet || '-',
+      'ME': row.me || '-',
+      'Jad Tag': row.jad_tag || '-',
+      'Nama Outlet': row.nama_outlet,
+      'No Faktur': row.no_faktur,
+      'Tgl Faktur': row.tgl_faktur || '-',
+      'Tgl Japo': row.tgl_japo || '-',
+      'Saldo': row.saldo ?? 0,
+      'TOP': row.top_hari ?? '-',
+      'Nilai': row.nilai || '-',
+      'Umur Faktur': computeUmurFaktur(row.tgl_faktur) ?? '-',
+      'Hari Overdue': hariOverdue !== null ? hariOverdue : '-',
+      'Status Konfirmasi': row.is_confirmed ? `Sudah Dikonfirmasi (${row.confirmed_by_name || '-'})` : 'Belum Dikonfirmasi',
+    };
+  });
+
+  const keys = Object.keys(data[0]);
+  const csvHeader = keys.join(',');
+
+  const csvRows = data.map(row => {
+    return keys.map(key => {
+      const value = row[key as keyof typeof row];
+      if (value === null || value === undefined) {
+        return '';
+      }
+      if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+        return `"${String(value).replace(/"/g, '""')}"`;
+      }
+      return value;
+    }).join(',');
+  });
+
+  const csvContent = [csvHeader, ...csvRows].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  const fileName = `cek_faktur_${new Date().toISOString().split('T')[0]}.csv`;
 
   link.setAttribute('href', url);
   link.setAttribute('download', fileName);
