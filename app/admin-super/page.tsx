@@ -2218,13 +2218,26 @@ export default function AdminSuperDashboard() {
             </div>
           ) : pivotViewMode === 'pivot' && pivotData ? (
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-              <div className="text-sm text-gray-400 mb-3">
-                {pivotData.isByOutlet
-                  ? `Nama Barang: "${filterNamaBarang}" → Dikelompokkan per Outlet`
-                  : filterOutlet !== 'all'
-                  ? `Outlet: "${filterOutlet}" → Dikelompokkan per Barang`
-                  : 'Semua Barang → Dikelompokkan per Bulan'}
-                <span className="ml-3 text-gray-500">({pivotData.rows.length} baris | {filteredInvoiceHistory.length} record)</span>
+              <div className="text-sm text-gray-400 mb-3 flex items-center gap-3 flex-wrap">
+                {pivotData.isByOutlet && (
+                  <button
+                    onClick={() => handleFilterChange('namaBarang', 'all')}
+                    className="text-blue-400 hover:text-blue-300 hover:underline"
+                  >
+                    ← Kembali ke daftar barang
+                  </button>
+                )}
+                <span>
+                  {pivotData.isByOutlet
+                    ? `Nama Barang: "${filterNamaBarang}" → Dikelompokkan per Outlet`
+                    : filterOutlet !== 'all'
+                    ? `Outlet: "${filterOutlet}" → Dikelompokkan per Barang`
+                    : 'Semua Barang → Dikelompokkan per Bulan'}
+                </span>
+                <span className="text-gray-500">({pivotData.rows.length} baris | {filteredInvoiceHistory.length} record)</span>
+                {!pivotData.isByOutlet && (
+                  <span className="text-gray-500 italic">Klik nama barang untuk melihat rincian per outlet</span>
+                )}
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm border-collapse">
@@ -2246,7 +2259,10 @@ export default function AdminSuperDashboard() {
                   <tbody>
                     {pivotData.rows.map((row, idx) => (
                       <tr key={idx} className={`hover:bg-gray-700/50 ${idx % 2 === 0 ? '' : 'bg-gray-800/50'}`}>
-                        <td className="px-4 py-2 text-gray-200 border border-gray-700 sticky left-0 bg-gray-800 font-medium z-10 text-sm">
+                        <td
+                          onClick={pivotData.isByOutlet ? undefined : () => handleFilterChange('namaBarang', row.name)}
+                          className={`px-4 py-2 text-gray-200 border border-gray-700 sticky left-0 bg-gray-800 font-medium z-10 text-sm ${pivotData.isByOutlet ? '' : 'cursor-pointer hover:text-blue-300 hover:underline'}`}
+                        >
                           {row.name}
                         </td>
                         {pivotData.months.map(m => (

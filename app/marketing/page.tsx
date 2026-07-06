@@ -1502,13 +1502,26 @@ Terima kasih!
               </div>
             ) : pivotDataMkt ? (
               <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-                <div className="text-sm text-gray-400 mb-3">
-                  {pivotDataMkt.isByOutlet
-                    ? `Nama Barang: "${filterNamaBarang}" → Dikelompokkan per Outlet`
-                    : filterOutlet !== 'all'
-                    ? `Outlet: "${filterOutlet}" → Dikelompokkan per Barang`
-                    : 'Semua Barang → Dikelompokkan per Bulan'}
-                  <span className="ml-3 text-gray-500">({pivotDataMkt.rows.length} baris | {filteredInvoiceHistory.length.toLocaleString('id-ID')} record)</span>
+                <div className="text-sm text-gray-400 mb-3 flex items-center gap-3 flex-wrap">
+                  {pivotDataMkt.isByOutlet && (
+                    <button
+                      onClick={() => handleFilterChangeMkt('namaBarang', 'all')}
+                      className="text-blue-400 hover:text-blue-300 hover:underline"
+                    >
+                      ← Kembali ke daftar barang
+                    </button>
+                  )}
+                  <span>
+                    {pivotDataMkt.isByOutlet
+                      ? `Nama Barang: "${filterNamaBarang}" → Dikelompokkan per Outlet`
+                      : filterOutlet !== 'all'
+                      ? `Outlet: "${filterOutlet}" → Dikelompokkan per Barang`
+                      : 'Semua Barang → Dikelompokkan per Bulan'}
+                  </span>
+                  <span className="text-gray-500">({pivotDataMkt.rows.length} baris | {filteredInvoiceHistory.length.toLocaleString('id-ID')} record)</span>
+                  {!pivotDataMkt.isByOutlet && (
+                    <span className="text-gray-500 italic">Klik nama barang untuk melihat rincian per outlet</span>
+                  )}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm border-collapse">
@@ -1530,7 +1543,10 @@ Terima kasih!
                     <tbody>
                       {pivotDataMkt.rows.map((row, idx) => (
                         <tr key={idx} className={`hover:bg-gray-800/60 ${idx % 2 === 0 ? '' : 'bg-gray-900/60'}`}>
-                          <td className="px-4 py-2 text-gray-200 border border-gray-800 sticky left-0 bg-gray-900 font-medium z-10 text-sm">
+                          <td
+                            onClick={pivotDataMkt.isByOutlet ? undefined : () => handleFilterChangeMkt('namaBarang', row.name)}
+                            className={`px-4 py-2 text-gray-200 border border-gray-800 sticky left-0 bg-gray-900 font-medium z-10 text-sm ${pivotDataMkt.isByOutlet ? '' : 'cursor-pointer hover:text-blue-300 hover:underline'}`}
+                          >
                             {row.name}
                           </td>
                           {pivotDataMkt.months.map(m => (
