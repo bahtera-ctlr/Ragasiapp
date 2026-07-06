@@ -277,17 +277,20 @@ export default function AdminSuperDashboard() {
   const [filterNamaBarang, setFilterNamaBarang] = useState('all');
   const [filterPrinciple, setFilterPrinciple] = useState('all');
   const [filterME, setFilterME] = useState('all');
+  const [filterKomposisi, setFilterKomposisi] = useState('all');
   // Refs to track active filters so fetchInvoiceHistory can re-apply them after auth re-trigger
   const filterOutletRef = useRef('all');
   const filterNamaBarangRef = useRef('all');
   const filterPrincipleRef = useRef('all');
   const filterMERef = useRef('all');
+  const filterKomposisiRef = useRef('all');
 
   // Dropdown options for filters
   const [outletOptions, setOutletOptions] = useState<string[]>([]);
   const [namaBarangOptions, setNamaBarangOptions] = useState<string[]>([]);
   const [principleOptions, setPrincipleOptions] = useState<string[]>([]);
   const [meOptions, setMEOptions] = useState<string[]>([]);
+  const [komposisiOptions, setKomposisiOptions] = useState<string[]>([]);
 
   const [invoiceCount, setInvoiceCount] = useState<number>(-1); // -1 = not yet loaded
   const [filteredInvoiceHistory, setFilteredInvoiceHistory] = useState<InvoiceHistory[]>([]);
@@ -722,12 +725,14 @@ export default function AdminSuperDashboard() {
       setNamaBarangOptions(result.namaBarang ?? []);
       setPrincipleOptions(result.principles ?? []);
       setMEOptions(result.mes ?? []);
+      setKomposisiOptions(result.komposisi ?? []);
 
       const hasActiveFilter =
         filterOutletRef.current !== 'all' ||
         filterNamaBarangRef.current !== 'all' ||
         filterPrincipleRef.current !== 'all' ||
-        filterMERef.current !== 'all';
+        filterMERef.current !== 'all' ||
+        filterKomposisiRef.current !== 'all';
 
       if (hasActiveFilter) {
         setLoadingFilter(true);
@@ -737,6 +742,7 @@ export default function AdminSuperDashboard() {
             nama_barang: filterNamaBarangRef.current !== 'all' ? filterNamaBarangRef.current : undefined,
             principle: filterPrincipleRef.current !== 'all' ? filterPrincipleRef.current : undefined,
             me: filterMERef.current !== 'all' ? filterMERef.current : undefined,
+            komposisi: filterKomposisiRef.current !== 'all' ? filterKomposisiRef.current : undefined,
           });
           setFilteredInvoiceHistory(filtered.error ? [] : (filtered.data || []));
         } catch {
@@ -863,21 +869,23 @@ export default function AdminSuperDashboard() {
   }, [salesFiltered]);
 
   // Handle filter changes — fetches filtered data from DB on every change
-  const handleFilterChange = async (type: 'outlet' | 'namaBarang' | 'principle' | 'me', value: string) => {
+  const handleFilterChange = async (type: 'outlet' | 'namaBarang' | 'principle' | 'me' | 'komposisi', value: string) => {
     let newOutlet = filterOutlet;
     let newNamaBarang = filterNamaBarang;
     let newPrinciple = filterPrinciple;
     let newME = filterME;
+    let newKomposisi = filterKomposisi;
 
     switch (type) {
       case 'outlet':      newOutlet = value;      setFilterOutlet(value);      filterOutletRef.current = value;     break;
       case 'namaBarang':  newNamaBarang = value;  setFilterNamaBarang(value);  filterNamaBarangRef.current = value; break;
       case 'principle':   newPrinciple = value;   setFilterPrinciple(value);   filterPrincipleRef.current = value;  break;
       case 'me':          newME = value;           setFilterME(value);          filterMERef.current = value;         break;
+      case 'komposisi':   newKomposisi = value;   setFilterKomposisi(value);   filterKomposisiRef.current = value;  break;
     }
 
     // When all filters cleared, show prompt instead of loading everything
-    if (newOutlet === 'all' && newNamaBarang === 'all' && newPrinciple === 'all' && newME === 'all') {
+    if (newOutlet === 'all' && newNamaBarang === 'all' && newPrinciple === 'all' && newME === 'all' && newKomposisi === 'all') {
       setFilteredInvoiceHistory([]);
       return;
     }
@@ -889,6 +897,7 @@ export default function AdminSuperDashboard() {
         nama_barang: newNamaBarang !== 'all' ? newNamaBarang : undefined,
         principle: newPrinciple !== 'all' ? newPrinciple : undefined,
         me: newME !== 'all' ? newME : undefined,
+        komposisi: newKomposisi !== 'all' ? newKomposisi : undefined,
       });
       if (result.error) {
         console.error('Error fetching filtered data:', result.error);
@@ -2156,6 +2165,13 @@ export default function AdminSuperDashboard() {
               placeholder="Semua ME"
               icon="👤"
             />
+            <SearchableSelect
+              value={filterKomposisi}
+              onChange={(v) => handleFilterChange('komposisi', v)}
+              options={komposisiOptions}
+              placeholder="Semua Komposisi"
+              icon="🧪"
+            />
           </div>
 
           {/* View Toggle */}
@@ -2188,11 +2204,11 @@ export default function AdminSuperDashboard() {
               <h3 className="text-xl font-semibold text-white mb-2">Belum ada data historis penjualan</h3>
               <p className="text-gray-400">Upload CSV untuk mulai menampilkan data penjualan</p>
             </div>
-          ) : filterOutlet === 'all' && filterNamaBarang === 'all' && filterPrinciple === 'all' && filterME === 'all' ? (
+          ) : filterOutlet === 'all' && filterNamaBarang === 'all' && filterPrinciple === 'all' && filterME === 'all' && filterKomposisi === 'all' ? (
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-12 text-center">
               <div className="text-5xl mb-4">🔍</div>
               <h3 className="text-xl font-semibold text-white mb-2">Pilih filter untuk melihat data pivot</h3>
-              <p className="text-gray-400">Pilih Outlet, Nama Barang, Principle, atau ME untuk memuat data dari database ({invoiceCount.toLocaleString('id-ID')}+ record tersedia)</p>
+              <p className="text-gray-400">Pilih Outlet, Nama Barang, Principle, ME, atau Komposisi untuk memuat data dari database ({invoiceCount.toLocaleString('id-ID')}+ record tersedia)</p>
             </div>
           ) : filteredInvoiceHistory.length === 0 ? (
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-12 text-center">
@@ -2276,6 +2292,7 @@ export default function AdminSuperDashboard() {
                     <th className="px-4 py-3 text-left text-gray-300 font-medium">Salesman</th>
                     <th className="px-4 py-3 text-left text-gray-300 font-medium">ME</th>
                     <th className="px-4 py-3 text-left text-gray-300 font-medium">Principle</th>
+                    <th className="px-4 py-3 text-left text-gray-300 font-medium">Komposisi</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2296,6 +2313,7 @@ export default function AdminSuperDashboard() {
                       <td className="px-4 py-3 text-gray-400 text-sm">{record.salesman || '-'}</td>
                       <td className="px-4 py-3 text-gray-400 text-sm">{record.me || '-'}</td>
                       <td className="px-4 py-3 text-gray-400 text-sm">{record.principle || '-'}</td>
+                      <td className="px-4 py-3 text-gray-400 text-sm">{record.komposisi || '-'}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -597,8 +597,8 @@ export async function rejectLimitRequest(
 
 // All columns used in raw data table + pivot
 const INVOICE_COLS = 'outlet_name,no_outlet,nama_barang,bln,tgl,penjualan,principle,me,no_faktur,salesman,qty,sat,gudang,disc,dpp,lh_lb,komposisi';
-// Subset needed for filtered pivot + raw data table (excludes gudang,disc,dpp,lh_lb,komposisi)
-const FILTERED_COLS = 'outlet_name,no_outlet,nama_barang,bln,tgl,penjualan,principle,me,no_faktur,qty,sat,salesman';
+// Subset needed for filtered pivot + raw data table (excludes gudang,disc,dpp,lh_lb)
+const FILTERED_COLS = 'outlet_name,no_outlet,nama_barang,bln,tgl,penjualan,principle,me,no_faktur,qty,sat,salesman,komposisi';
 
 async function invoiceAuthCheck(): Promise<{ userId: string } | { error: string }> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -625,6 +625,7 @@ type FilterOptionsResult = {
   namaBarang?: string[];
   principles?: string[];
   mes?: string[];
+  komposisi?: string[];
   error?: string;
 };
 
@@ -633,6 +634,7 @@ type FilterOptionsRpcPayload = {
   nama_barang: string[];
   principles: string[];
   mes: string[];
+  komposisi: string[];
   count: number;
 };
 
@@ -646,6 +648,7 @@ async function callFilterOptionsRpc(): Promise<FilterOptionsResult> {
     namaBarang: d.nama_barang || [],
     principles: d.principles || [],
     mes: d.mes || [],
+    komposisi: d.komposisi || [],
   };
 }
 
@@ -696,6 +699,7 @@ export async function getFilteredInvoiceHistory(filters: {
   nama_barang?: string;
   principle?: string;
   me?: string;
+  komposisi?: string;
 }): Promise<{ data?: InvoiceHistory[]; error?: string }> {
   try {
     const auth = await invoiceAuthCheck();
@@ -712,6 +716,7 @@ export async function getFilteredInvoiceHistory(filters: {
       if (filters.nama_barang) q = q.eq('nama_barang', filters.nama_barang);
       if (filters.principle) q = q.eq('principle', filters.principle);
       if (filters.me) q = q.eq('me', filters.me);
+      if (filters.komposisi) q = q.eq('komposisi', filters.komposisi);
       return q.range(start, end);
     };
 
@@ -760,6 +765,7 @@ export async function getFilteredInvoiceHistoryReadOnly(filters: {
   nama_barang?: string;
   principle?: string;
   me?: string;
+  komposisi?: string;
 }): Promise<{ data?: InvoiceHistory[]; error?: string }> {
   try {
     const auth = await invoiceReadAuthCheck();
@@ -776,6 +782,7 @@ export async function getFilteredInvoiceHistoryReadOnly(filters: {
       if (filters.nama_barang) q = q.eq('nama_barang', filters.nama_barang);
       if (filters.principle) q = q.eq('principle', filters.principle);
       if (filters.me) q = q.eq('me', filters.me);
+      if (filters.komposisi) q = q.eq('komposisi', filters.komposisi);
       return q.range(start, end);
     };
 

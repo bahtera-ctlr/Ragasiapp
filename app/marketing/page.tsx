@@ -236,15 +236,18 @@ export default function MarketingDashboard() {
   const [filterNamaBarang, setFilterNamaBarang] = useState('all');
   const [filterPrinciple, setFilterPrinciple] = useState('all');
   const [filterME, setFilterME] = useState('all');
+  const [filterKomposisi, setFilterKomposisi] = useState('all');
   // Refs to track active filters so fetchInvoiceHistory can re-apply them after auth re-trigger
   const filterOutletRef = useRef('all');
   const filterNamaBarangRef = useRef('all');
   const filterPrincipleRef = useRef('all');
   const filterMERef = useRef('all');
+  const filterKomposisiRef = useRef('all');
   const [outletOptions, setOutletOptions] = useState<string[]>([]);
   const [namaBarangOptions, setNamaBarangOptions] = useState<string[]>([]);
   const [principleOptions, setPrincipleOptions] = useState<string[]>([]);
   const [meOptions, setMEOptions] = useState<string[]>([]);
+  const [komposisiOptions, setKomposisiOptions] = useState<string[]>([]);
   const fetchingHistoryRef = useRef(false);
 
   // Report Sales (in-memory CSV)
@@ -420,12 +423,14 @@ export default function MarketingDashboard() {
       setNamaBarangOptions(result.namaBarang ?? []);
       setPrincipleOptions(result.principles ?? []);
       setMEOptions(result.mes ?? []);
+      setKomposisiOptions(result.komposisi ?? []);
 
       const hasActiveFilter =
         filterOutletRef.current !== 'all' ||
         filterNamaBarangRef.current !== 'all' ||
         filterPrincipleRef.current !== 'all' ||
-        filterMERef.current !== 'all';
+        filterMERef.current !== 'all' ||
+        filterKomposisiRef.current !== 'all';
 
       if (hasActiveFilter) {
         setLoadingFilter(true);
@@ -435,6 +440,7 @@ export default function MarketingDashboard() {
             nama_barang: filterNamaBarangRef.current !== 'all' ? filterNamaBarangRef.current : undefined,
             principle: filterPrincipleRef.current !== 'all' ? filterPrincipleRef.current : undefined,
             me: filterMERef.current !== 'all' ? filterMERef.current : undefined,
+            komposisi: filterKomposisiRef.current !== 'all' ? filterKomposisiRef.current : undefined,
           });
           setFilteredInvoiceHistory(filtered.error ? [] : (filtered.data || []));
         } catch {
@@ -478,20 +484,22 @@ export default function MarketingDashboard() {
     }
   }, []);
 
-  const handleFilterChangeMkt = async (type: 'outlet' | 'namaBarang' | 'principle' | 'me', value: string) => {
+  const handleFilterChangeMkt = async (type: 'outlet' | 'namaBarang' | 'principle' | 'me' | 'komposisi', value: string) => {
     let newOutlet = filterOutlet;
     let newNamaBarang = filterNamaBarang;
     let newPrinciple = filterPrinciple;
     let newME = filterME;
+    let newKomposisi = filterKomposisi;
 
     switch (type) {
       case 'outlet':     newOutlet = value;     setFilterOutlet(value);     filterOutletRef.current = value;     break;
       case 'namaBarang': newNamaBarang = value; setFilterNamaBarang(value); filterNamaBarangRef.current = value; break;
       case 'principle':  newPrinciple = value;  setFilterPrinciple(value);  filterPrincipleRef.current = value;  break;
       case 'me':         newME = value;          setFilterME(value);         filterMERef.current = value;         break;
+      case 'komposisi':  newKomposisi = value;   setFilterKomposisi(value);  filterKomposisiRef.current = value;  break;
     }
 
-    if (newOutlet === 'all' && newNamaBarang === 'all' && newPrinciple === 'all' && newME === 'all') {
+    if (newOutlet === 'all' && newNamaBarang === 'all' && newPrinciple === 'all' && newME === 'all' && newKomposisi === 'all') {
       setFilteredInvoiceHistory([]);
       return;
     }
@@ -503,6 +511,7 @@ export default function MarketingDashboard() {
         nama_barang: newNamaBarang !== 'all' ? newNamaBarang : undefined,
         principle: newPrinciple !== 'all' ? newPrinciple : undefined,
         me: newME !== 'all' ? newME : undefined,
+        komposisi: newKomposisi !== 'all' ? newKomposisi : undefined,
       });
       setFilteredInvoiceHistory(result.error ? [] : (result.data || []));
     } finally {
@@ -1430,7 +1439,7 @@ Terima kasih!
             </div>
 
             {/* Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-3">
               <SearchableSelectMkt
                 value={filterOutlet}
                 onChange={(v) => handleFilterChangeMkt('outlet', v)}
@@ -1459,6 +1468,13 @@ Terima kasih!
                 placeholder="Semua ME"
                 icon="👤"
               />
+              <SearchableSelectMkt
+                value={filterKomposisi}
+                onChange={(v) => handleFilterChangeMkt('komposisi', v)}
+                options={komposisiOptions}
+                placeholder="Semua Komposisi"
+                icon="🧪"
+              />
             </div>
 
             {/* Data */}
@@ -1472,11 +1488,11 @@ Terima kasih!
                 <h3 className="text-xl font-semibold text-white mb-2">Belum ada data historis penjualan</h3>
                 <p className="text-gray-400">Data akan tersedia setelah admin mengupload CSV penjualan</p>
               </div>
-            ) : filterOutlet === 'all' && filterNamaBarang === 'all' && filterPrinciple === 'all' && filterME === 'all' ? (
+            ) : filterOutlet === 'all' && filterNamaBarang === 'all' && filterPrinciple === 'all' && filterME === 'all' && filterKomposisi === 'all' ? (
               <div className="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
                 <div className="text-5xl mb-4">🔍</div>
                 <h3 className="text-xl font-semibold text-white mb-2">Pilih filter untuk melihat data pivot</h3>
-                <p className="text-gray-400">Pilih Outlet, Nama Barang, Principle, atau ME untuk memuat data ({invoiceCount.toLocaleString('id-ID')}+ record tersedia)</p>
+                <p className="text-gray-400">Pilih Outlet, Nama Barang, Principle, ME, atau Komposisi untuk memuat data ({invoiceCount.toLocaleString('id-ID')}+ record tersedia)</p>
               </div>
             ) : filteredInvoiceHistory.length === 0 ? (
               <div className="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
