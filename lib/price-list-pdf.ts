@@ -5,6 +5,7 @@ export type PriceListPdfRow = {
   principle: string | null;
   komposisi: string | null;
   hjr: number;
+  stok: number | null;
   rate: number;
   nett: number;
 };
@@ -58,12 +59,13 @@ export function generatePriceListPDF(
 
   const COL = {
     no:    { x: 0, w: 8  },
-    nama:  { x: 0, w: 78 },
-    princ: { x: 0, w: 38 },
-    komp:  { x: 0, w: 60 },
-    hjr:   { x: 0, w: 24 },
-    disk:  { x: 0, w: 20 },
-    nett:  { x: 0, w: 24 },
+    nama:  { x: 0, w: 72 },
+    princ: { x: 0, w: 34 },
+    komp:  { x: 0, w: 52 },
+    hjr:   { x: 0, w: 22 },
+    stok:  { x: 0, w: 16 },
+    disk:  { x: 0, w: 18 },
+    nett:  { x: 0, w: 22 },
   };
   let cursor = margin;
   (Object.keys(COL) as (keyof typeof COL)[]).forEach((k) => {
@@ -84,6 +86,7 @@ export function generatePriceListPDF(
     pdf.text('Principle',   COL.princ.x + 1,             yy + 6);
     pdf.text('Komposisi',   COL.komp.x + 1,              yy + 6);
     pdf.text('HJR',         COL.hjr.x + COL.hjr.w - 1,   yy + 6, { align: 'right' });
+    pdf.text('Stok',        COL.stok.x + COL.stok.w - 1, yy + 6, { align: 'right' });
     pdf.text('Diskon',      COL.disk.x + COL.disk.w - 1, yy + 6, { align: 'right' });
     pdf.text('Nett',        COL.nett.x + COL.nett.w - 1, yy + 6, { align: 'right' });
     return yy + 9;
@@ -116,6 +119,9 @@ export function generatePriceListPDF(
     princLines.forEach((line: string, li: number) => pdf.text(line, COL.princ.x + 1, y + 4.5 + li * 3.6));
     kompLines.forEach((line: string, li: number) => pdf.text(line, COL.komp.x + 1, y + 4.5 + li * 3.6));
     pdf.text(rp(row.hjr), COL.hjr.x + COL.hjr.w - 1, y + 4.5, { align: 'right' });
+    const stok = row.stok ?? 0;
+    if (stok <= 0) setColor(200, 40, 40); else setColor(...GRAY_D);
+    pdf.text(`${stok.toLocaleString('id-ID')}`, COL.stok.x + COL.stok.w - 1, y + 4.5, { align: 'right' });
     setColor(...GRAY_M);
     pdf.text(`${row.rate}%`, COL.disk.x + COL.disk.w - 1, y + 4.5, { align: 'right' });
     setColor(...GRAY_D);

@@ -124,6 +124,7 @@ export default function DaftarHargaTable() {
         principle: r.principle,
         komposisi: r.komposisi,
         hjr: r.harga_jual_ragasi || 0,
+        stok: r.stok,
         rate: r.rate,
         nett: r.nett,
       })),
