@@ -4,6 +4,8 @@ export type PriceListPdfRow = {
   nama_barang: string;
   principle: string | null;
   komposisi: string | null;
+  golongan: string | null;
+  program: string | null;
   hjr: number;
   stok: number | null;
   rate: number;
@@ -59,13 +61,15 @@ export function generatePriceListPDF(
 
   const COL = {
     no:    { x: 0, w: 8  },
-    nama:  { x: 0, w: 72 },
-    princ: { x: 0, w: 34 },
-    komp:  { x: 0, w: 52 },
-    hjr:   { x: 0, w: 22 },
-    stok:  { x: 0, w: 16 },
-    disk:  { x: 0, w: 18 },
-    nett:  { x: 0, w: 22 },
+    nama:  { x: 0, w: 58 },
+    komp:  { x: 0, w: 42 },
+    princ: { x: 0, w: 28 },
+    gol:   { x: 0, w: 13 },
+    prog:  { x: 0, w: 13 },
+    hjr:   { x: 0, w: 20 },
+    stok:  { x: 0, w: 14 },
+    disk:  { x: 0, w: 16 },
+    nett:  { x: 0, w: 20 },
   };
   let cursor = margin;
   (Object.keys(COL) as (keyof typeof COL)[]).forEach((k) => {
@@ -83,8 +87,10 @@ export function generatePriceListPDF(
     pdf.setFont('helvetica', 'bold');
     pdf.text('No',          COL.no.x + 1,               yy + 6);
     pdf.text('Nama Barang', COL.nama.x + 1,              yy + 6);
-    pdf.text('Principle',   COL.princ.x + 1,             yy + 6);
     pdf.text('Komposisi',   COL.komp.x + 1,              yy + 6);
+    pdf.text('Principle',   COL.princ.x + 1,             yy + 6);
+    pdf.text('Gol',         COL.gol.x + 1,               yy + 6);
+    pdf.text('Prog',        COL.prog.x + 1,              yy + 6);
     pdf.text('HJR',         COL.hjr.x + COL.hjr.w - 1,   yy + 6, { align: 'right' });
     pdf.text('Stok',        COL.stok.x + COL.stok.w - 1, yy + 6, { align: 'right' });
     pdf.text('Diskon',      COL.disk.x + COL.disk.w - 1, yy + 6, { align: 'right' });
@@ -118,6 +124,16 @@ export function generatePriceListPDF(
     nameLines.forEach((line: string, li: number) => pdf.text(line, COL.nama.x + 1, y + 4.5 + li * 3.6));
     princLines.forEach((line: string, li: number) => pdf.text(line, COL.princ.x + 1, y + 4.5 + li * 3.6));
     kompLines.forEach((line: string, li: number) => pdf.text(line, COL.komp.x + 1, y + 4.5 + li * 3.6));
+    pdf.text(row.golongan || '-', COL.gol.x + 1, y + 4.5);
+    if (row.program && row.program.toUpperCase() === 'TP') {
+      setColor(210, 110, 20);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('TP', COL.prog.x + 1, y + 4.5);
+      pdf.setFont('helvetica', 'normal');
+      setColor(...GRAY_D);
+    } else {
+      pdf.text(row.program || '-', COL.prog.x + 1, y + 4.5);
+    }
     pdf.text(rp(row.hjr), COL.hjr.x + COL.hjr.w - 1, y + 4.5, { align: 'right' });
     const stok = row.stok ?? 0;
     if (stok <= 0) setColor(200, 40, 40); else setColor(...GRAY_D);
