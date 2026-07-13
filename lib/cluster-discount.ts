@@ -63,3 +63,49 @@ export function computeDiscountRate(
 
   return 0;
 }
+
+// Nilai representatif untuk menghitung diskon "reguler" per golongan (di atas ambang
+// flat-9%, di bawah ambang bonus >350rb) tanpa perlu tahu harga/qty barang sesungguhnya.
+const REGULAR_SUBTOTAL = 100000;
+const HIGH_SUBTOTAL = 400000;
+const GOL_LIST = ['F1', 'F2', 'F3', 'F4'];
+
+export type ClusterTerms = {
+  extra: string[];
+  general: string[];
+};
+
+/**
+ * Syarat & ketentuan diskon di luar tabel "diskon reguler": bonus diskon berdasarkan
+ * nilai pembelian, dan golongan/program dengan diskon flat. Dihitung dari computeDiscountRate
+ * yang sama supaya tidak pernah berbeda dengan diskon aktual di sales order.
+ */
+export function getClusterTerms(cluster: ClusterCode): ClusterTerms {
+  const groups = new Map<string, string[]>();
+  GOL_LIST.forEach((gol) => {
+    const regular = computeDiscountRate(cluster, gol, null, REGULAR_SUBTOTAL);
+    const extra = computeDiscountRate(cluster, gol, null, HIGH_SUBTOTAL);
+    if (extra !== regular) {
+      const key = `${regular}|${extra}`;
+      const arr = groups.get(key) || [];
+      arr.push(gol);
+      groups.set(key, arr);
+    }
+  });
+
+  const extra: string[] = [];
+  groups.forEach((golList, key) => {
+    const [regular, bonus] = key.split('|');
+    const golText = golList.length === GOL_LIST.length ? 'Semua golongan' : `Golongan ${golList.join('/')}`;
+    extra.push(`${golText}: diskon naik menjadi ${bonus}% (dari ${regular}%) jika nilai pembelian barang ini di atas Rp 350.000.`);
+  });
+
+  const general = [
+    'Jika nilai pembelian barang ≤ Rp 35.000, berlaku diskon flat 9% (menggantikan skema di atas).',
+    'Golongan CG: diskon flat 30% (berlaku di semua cluster).',
+    'Golongan ED: diskon flat 50% (berlaku di semua cluster).',
+    'Program TP: F1 25%, F2 22,5%, F3 20%, F4 15% (menggantikan skema cluster).',
+  ];
+
+  return { extra, general };
+}

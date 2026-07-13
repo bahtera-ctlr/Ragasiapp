@@ -3,13 +3,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import Select, { StylesConfig } from 'react-select';
 import { getAllPriceListProducts, type PriceListProduct } from '@/lib/price-list';
-import { CLUSTER_OPTIONS, computeDiscountRate, type ClusterCode } from '@/lib/cluster-discount';
+import { CLUSTER_OPTIONS, computeDiscountRate, getClusterTerms, type ClusterCode } from '@/lib/cluster-discount';
 import { generatePriceListPDF } from '@/lib/price-list-pdf';
 
 type Option = { value: string; label: string };
 
 const ITEMS_PER_PAGE = 50;
-const HIGH_VALUE_SUBTOTAL = 350001; // representasi "nilai pembelian > Rp 350.000"
+// Nilai representatif untuk diskon "reguler" per golongan — di atas ambang flat-9%,
+// di bawah ambang bonus >350rb (bonus & flat-9% dijelaskan sebagai syarat & ketentuan).
+const REGULAR_SUBTOTAL = 100000;
 
 const selectStyles: StylesConfig<Option, false> = {
   control: (base) => ({
@@ -35,10 +37,8 @@ function formatRupiah(value: number) {
 }
 
 type PriceRow = PriceListProduct & {
-  rate1: number;
-  net1: number;
-  rate2: number;
-  net2: number;
+  rate: number;
+  nett: number;
 };
 
 export default function DaftarHargaTable() {
@@ -88,17 +88,16 @@ export default function DaftarHargaTable() {
       })
       .map((p) => {
         const hjr = p.harga_jual_ragasi || 0;
-        const rate1 = computeDiscountRate(cluster, p.golongan_barang, p.program, hjr);
-        const rate2 = computeDiscountRate(cluster, p.golongan_barang, p.program, HIGH_VALUE_SUBTOTAL);
+        const rate = computeDiscountRate(cluster, p.golongan_barang, p.program, REGULAR_SUBTOTAL);
         return {
           ...p,
-          rate1,
-          net1: hjr - (hjr * rate1) / 100,
-          rate2,
-          net2: hjr - (hjr * rate2) / 100,
+          rate,
+          nett: hjr - (hjr * rate) / 100,
         };
       });
   }, [products, cluster, filterPrinciple, filterKomposisi, search]);
+
+  const terms = useMemo(() => (cluster ? getClusterTerms(cluster) : null), [cluster]);
 
   useEffect(() => {
     setPage(1);
@@ -113,6 +112,7 @@ export default function DaftarHargaTable() {
   const clusterLabel = CLUSTER_OPTIONS.find((c) => c.code === cluster)?.label || '';
 
   const handleDownloadPDF = () => {
+    if (!terms) return;
     const filterParts: string[] = [];
     if (filterPrinciple) filterParts.push(`Principle: ${filterPrinciple.label}`);
     if (filterKomposisi) filterParts.push(`Komposisi: ${filterKomposisi.label}`);
@@ -120,17 +120,14 @@ export default function DaftarHargaTable() {
       clusterLabel,
       filterParts.join(' | '),
       rows.map((r) => ({
-        nomor_barang: r.nomor_barang,
         nama_barang: r.nama_barang,
         principle: r.principle,
         komposisi: r.komposisi,
-        golongan_barang: r.golongan_barang,
         hjr: r.harga_jual_ragasi || 0,
-        rate1: r.rate1,
-        net1: r.net1,
-        rate2: r.rate2,
-        net2: r.net2,
-      }))
+        rate: r.rate,
+        nett: r.nett,
+      })),
+      terms
     );
   };
 
@@ -204,36 +201,28 @@ export default function DaftarHargaTable() {
                 <table className="w-full whitespace-nowrap">
                   <thead>
                     <tr className="border-b border-gray-700">
-                      <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-left text-xs font-medium">Kode</th>
                       <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-left text-xs font-medium">Nama Barang</th>
-                      <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-left text-xs font-medium">Principle</th>
                       <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-left text-xs font-medium">Komposisi</th>
-                      <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-left text-xs font-medium">Gol</th>
+                      <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-left text-xs font-medium">Principle</th>
                       <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-right text-xs font-medium">HJR</th>
-                      <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-right text-xs font-medium">Diskon (Qty 1)</th>
-                      <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-right text-xs font-medium">Harga Net (Qty 1)</th>
-                      <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-right text-xs font-medium">Diskon (&gt;350rb)</th>
-                      <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-right text-xs font-medium">Harga Net (&gt;350rb)</th>
+                      <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-right text-xs font-medium">Diskon</th>
+                      <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-right text-xs font-medium">Nett</th>
                     </tr>
                   </thead>
                   <tbody>
                     {paginatedRows.map((row) => (
                       <tr key={row.id} className="border-b border-gray-700 hover:bg-gray-800">
-                        <td className="px-3 py-2.5 text-xs text-gray-400">{row.nomor_barang || '-'}</td>
                         <td className="px-3 py-2.5 text-sm">{row.nama_barang}</td>
-                        <td className="px-3 py-2.5 text-sm text-gray-400">{row.principle || '-'}</td>
                         <td className="px-3 py-2.5 text-sm text-gray-400">{row.komposisi || '-'}</td>
-                        <td className="px-3 py-2.5 text-sm text-gray-400">{row.golongan_barang || '-'}</td>
+                        <td className="px-3 py-2.5 text-sm text-gray-400">{row.principle || '-'}</td>
                         <td className="px-3 py-2.5 text-sm text-right">{formatRupiah(row.harga_jual_ragasi || 0)}</td>
-                        <td className="px-3 py-2.5 text-sm text-right text-yellow-400">{row.rate1}%</td>
-                        <td className="px-3 py-2.5 text-sm text-right font-medium">{formatRupiah(row.net1)}</td>
-                        <td className="px-3 py-2.5 text-sm text-right text-yellow-400">{row.rate2}%</td>
-                        <td className="px-3 py-2.5 text-sm text-right font-medium">{formatRupiah(row.net2)}</td>
+                        <td className="px-3 py-2.5 text-sm text-right text-yellow-400">{row.rate}%</td>
+                        <td className="px-3 py-2.5 text-sm text-right font-medium">{formatRupiah(row.nett)}</td>
                       </tr>
                     ))}
                     {paginatedRows.length === 0 && (
                       <tr>
-                        <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                           Tidak ada barang yang cocok dengan filter.
                         </td>
                       </tr>
@@ -245,8 +234,22 @@ export default function DaftarHargaTable() {
           )}
 
           <div className="mt-3 text-gray-400 text-xs">
-            Ditampilkan: {rows.length.toLocaleString('id-ID')} barang. Kolom &quot;Qty 1&quot; = diskon pada nilai pembelian barang ini sendiri; kolom &quot;&gt;350rb&quot; = diskon jika nilai pembelian barang ini di atas Rp 350.000.
+            Ditampilkan: {rows.length.toLocaleString('id-ID')} barang.
           </div>
+
+          {terms && (terms.extra.length > 0 || terms.general.length > 0) && (
+            <div className="mt-4 bg-gray-900 border border-gray-800 rounded-lg p-4">
+              <p className="text-sm font-semibold text-white mb-2">Syarat &amp; Ketentuan Diskon</p>
+              <ul className="space-y-1 text-xs text-gray-400 list-disc list-inside">
+                {terms.extra.map((line, i) => (
+                  <li key={`extra-${i}`}>{line}</li>
+                ))}
+                {terms.general.map((line, i) => (
+                  <li key={`general-${i}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {totalPages > 1 && (
             <div className="flex justify-center items-center gap-2 mt-4 pb-4">
