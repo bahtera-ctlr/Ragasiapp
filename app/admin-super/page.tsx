@@ -20,6 +20,7 @@ import { getAllDiscountRequests, approveDiscountRequest, rejectDiscountRequest, 
 import { getAllInvoicesForAdmin, deleteInvoice, deleteAllInvoices, deleteDeliveryData, deleteOrder, deleteAllOrders } from '@/lib/orders';
 import { getSalesReport, replaceSalesReport, deleteAllSalesReport } from '@/lib/sales-report';
 import { getOutlets } from '@/lib/export';
+import DaftarHargaTable from '@/app/components/DaftarHargaTable';
 
 type SalesReportRow = {
   no_outlet: string;
@@ -202,7 +203,7 @@ export default function AdminSuperDashboard() {
   }, []);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'pengajuan-diskon' | 'historis-pengambilan' | 'report-sales' | 'akses-halaman' | 'kelola-data'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'pengajuan-diskon' | 'historis-pengambilan' | 'report-sales' | 'akses-halaman' | 'kelola-data' | 'daftar-harga'>('dashboard');
 
   // Kelola Data states
   type AdminInvoice = { id: string; outlet_id: string; outlet?: { name?: string; NIO?: string } | null; amount: number; status: string; faktur_status?: string; faktur_number?: string; shipment_status?: string; delivery_status?: string; created_at: string };
@@ -1528,6 +1529,7 @@ export default function AdminSuperDashboard() {
             { key: 'users',                  label: 'Users',           icon: '👥', color: 'blue'   },
             { key: 'pengajuan-diskon',       label: 'Diskon',          icon: '💰', color: 'blue'   },
             { key: 'historis-pengambilan',   label: 'Historis',        icon: '🗂️', color: 'blue'   },
+            { key: 'daftar-harga',           label: 'Daftar Harga',    icon: '💵', color: 'green'  },
             { key: 'report-sales',           label: 'Report Sales',    icon: '📈', color: 'green'  },
             { key: 'akses-halaman',          label: 'Akses Halaman',   icon: '🔗', color: 'purple' },
             { key: 'kelola-data',            label: 'Kelola Data',     icon: '🗑️', color: 'red'    },
@@ -2339,6 +2341,13 @@ export default function AdminSuperDashboard() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* DAFTAR HARGA TAB */}
+      {activeTab === 'daftar-harga' && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <DaftarHargaTable />
         </div>
       )}
 

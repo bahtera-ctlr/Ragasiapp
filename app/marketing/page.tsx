@@ -15,6 +15,7 @@ import { getFakturImages, FakturImage } from '@/lib/faktur-images';
 import { createDiscountRequest, getDiscountRequests, type DiscountRequest, getInvoiceFilterOptionsReadOnly, getFilteredInvoiceHistoryReadOnly, type InvoiceHistory } from '@/lib/discount-requests';
 import { getSalesReport } from '@/lib/sales-report';
 import InvoiceAgingTable from '@/app/components/InvoiceAgingTable';
+import DaftarHargaTable from '@/app/components/DaftarHargaTable';
 
 type MarketingInvoice = {
   id: string;
@@ -165,7 +166,7 @@ export default function MarketingDashboard() {
   const { user, userProfile, loading } = useAuth();
   const { hasAccess } = useRoleCheck(['marketing', 'super_admin']);
 
-  const [tab, setTab] = useState<'sales' | 'invoices' | 'pengajuan-diskon' | 'pengajuan-limit' | 'data-outlet' | 'historis-pengambilan' | 'report-sales' | 'cek-faktur'>('sales');
+  const [tab, setTab] = useState<'sales' | 'invoices' | 'pengajuan-diskon' | 'pengajuan-limit' | 'data-outlet' | 'historis-pengambilan' | 'report-sales' | 'cek-faktur' | 'daftar-harga'>('sales');
   const [pendingInvoices, setPendingInvoices] = useState<MarketingInvoice[]>([]);
   const [invoices, setInvoices] = useState<MarketingInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -853,6 +854,7 @@ Terima kasih!
             { key: 'historis-pengambilan', label: '📈 Historis', color: 'purple' },
             { key: 'report-sales', label: '📊 Report Sales', color: 'green' },
             { key: 'cek-faktur', label: '🧾 Cek Faktur', color: 'green' },
+            { key: 'daftar-harga', label: '💵 Daftar Harga', color: 'green' },
           ] as const).map(({ key, label, color }) => (
             <button
               key={key}
@@ -1721,6 +1723,13 @@ Terima kasih!
             <h2 className="text-lg sm:text-2xl font-bold text-white mb-1">🧾 Cek Faktur</h2>
             <p className="text-gray-400 text-xs sm:text-sm mb-4">Filter faktur piutang per outlet &amp; konfirmasi yang sudah lewat jatuh tempo</p>
             <InvoiceAgingTable canUpload={false} />
+          </div>
+        )}
+
+        {/* Daftar Harga Tab */}
+        {tab === 'daftar-harga' && (
+          <div>
+            <DaftarHargaTable />
           </div>
         )}
       </main>

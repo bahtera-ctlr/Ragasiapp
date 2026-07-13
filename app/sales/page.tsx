@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useRef } from "react"
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { computeDiscountRate } from "@/lib/cluster-discount";
 
 type Outlet = {
   id: string;
@@ -190,54 +191,7 @@ const [resultModal, setResultModal] = useState<{
   product: Product,
   qty: number
 ) {
-  const subtotal = product.price * qty;
-
-  // Jika nilai per item ≤ Rp 35.000 → diskon flat 9%
-  if (subtotal <= 35000) return 9;
-  const gol = product.gol?.toUpperCase() || "";
-  const pro = product.pro?.toUpperCase() || "";
-
-  // ===== RULE GOL OVERRIDE: berlaku apapun cluster =====
-  if (gol === "CG") return 30;
-  if (gol === "ED") return 50;
-
-  // ===== RULE TP: override semua cluster =====
-  if (pro === "TP") {
-    if (gol === "F1") return 25;
-    if (gol === "F2") return 22.5;
-    if (gol === "F3") return 20;
-    if (gol === "F4") return 15;
-    return 0;
-  }
-
-  // ===== CLUSTER 1 =====
-  if (cluster === "C1") {
-    if (subtotal > 350000) return 15;
-    return 12.5;
-  }
-
-  // ===== CLUSTER 2 =====
-  if (cluster === "C2") {
-    if (["F1", "F2", "F3"].includes(gol)) {
-      if (subtotal > 350000) return 20;
-      return 17.5;
-    }
-
-    if (gol === "F4") {
-      if (subtotal > 350000) return 15;
-      return 12.5;
-    }
-  }
-
-  // ===== CLUSTER 3 =====
-  if (cluster === "C3") {
-    if (gol === "F1") return 25;
-    if (gol === "F2") return 22.5;
-    if (gol === "F3") return 20;
-    if (gol === "F4") return 15;
-  }
-
-  return 0;
+  return computeDiscountRate(cluster, product.gol, product.pro, product.price * qty);
 }
 
 function handleSelectProduct(product: Product) {
