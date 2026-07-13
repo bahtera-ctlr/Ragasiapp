@@ -98,37 +98,37 @@ export async function uploadStagingProducts(products: StagingProduct[]) {
       return { data: [], error: null };
     }
 
-    // Coba insert dengan isi_box terlebih dahulu
-    let { data, error: insertError } = await supabase
-      .from('products')
-      .insert(products)
-      .select();
+    const BATCH_SIZE = 500;
+    let rowsToInsert: StagingProduct[] | Omit<StagingProduct, 'isi_box'>[] = products;
+    const allData: Record<string, unknown>[] = [];
 
-    if (insertError) {
-      const errMsg = insertError.message || insertError.details || insertError.hint || JSON.stringify(insertError);
-      console.error('Insert error detail:', { message: insertError.message, code: insertError.code, details: insertError.details, hint: insertError.hint });
+    for (let i = 0; i < rowsToInsert.length; i += BATCH_SIZE) {
+      const batch = rowsToInsert.slice(i, i + BATCH_SIZE);
+      const { data, error: insertError } = await supabase
+        .from('products')
+        .insert(batch)
+        .select();
 
-      // Jika kolom isi_box belum ada di database, coba tanpa isi_box
-      const isColumnMissing = errMsg.includes('isi_box') || insertError.code === '42703';
-      if (isColumnMissing) {
-        console.warn('Kolom isi_box belum ada di database. Upload tanpa isi_box...');
-        const productsWithoutIsiBox = products.map(({ isi_box: _omit, ...rest }) => rest);
-        const fallback = await supabase
-          .from('products')
-          .insert(productsWithoutIsiBox)
-          .select();
-        if (fallback.error) {
-          const fb = fallback.error;
-          return { error: `Gagal mengupload data barang: ${fb.message || fb.details || JSON.stringify(fb)}` };
+      if (insertError) {
+        const errMsg = insertError.message || insertError.details || insertError.hint || JSON.stringify(insertError);
+        console.error('Insert error detail:', { message: insertError.message, code: insertError.code, details: insertError.details, hint: insertError.hint });
+
+        // Jika kolom isi_box belum ada di database, mulai ulang dari batch pertama tanpa isi_box
+        const isColumnMissing = errMsg.includes('isi_box') || insertError.code === '42703';
+        if (isColumnMissing && i === 0) {
+          console.warn('Kolom isi_box belum ada di database. Upload tanpa isi_box...');
+          rowsToInsert = products.map(({ isi_box: _omit, ...rest }) => rest);
+          i = -BATCH_SIZE; // restart loop from 0 with the stripped rows
+          continue;
         }
-        data = fallback.data;
-        console.warn('⚠ Upload berhasil TANPA isi_box. Jalankan SQL migration "add-isi-box-column.sql" di Supabase agar kolom ISI terbaca.');
-      } else {
+
         return { error: `Gagal mengupload data barang: ${errMsg}` };
       }
+
+      if (data) allData.push(...data);
     }
 
-    return { data, error: null };
+    return { data: allData, error: null };
   } catch (err) {
     console.error('Unexpected error:', err);
     return { error: String(err) };
@@ -140,7 +140,7 @@ export async function uploadStagingProducts(products: StagingProduct[]) {
  * Expected format: NB, GOL, PRO, POIN, Nama Barang, Komposisi, Principle, Sat, HJE, Stok
  * Automatically detects delimiter (comma, tab, semicolon)
  */
-export function parseCsvData(csvContent: string): { data: StagingProduct[]; error?: string } {
+export function parseCsvData(csvContent: string): { data: StagingProduct[]; error?: string; duplicatesRemoved?: number } {
   try {
     const lines = csvContent.trim().split('\n');
     
@@ -276,7 +276,18 @@ export function parseCsvData(csvContent: string): { data: StagingProduct[]; erro
       products.push(product);
     }
 
-    return { data: products };
+    // Baris dengan NB yang sama bikin insert gagal (unique constraint), meski
+    // tabel lama sudah dikosongkan — karena constraint juga berlaku di dalam
+    // satu batch insert. Ambil kemunculan terakhir tiap NB (biasanya baris
+    // paling bawah = data terbaru pada file master).
+    const byNomorBarang = new Map<string, StagingProduct>();
+    for (const product of products) {
+      byNomorBarang.set(product.nomor_barang, product);
+    }
+    const dedupedProducts = Array.from(byNomorBarang.values());
+    const duplicatesRemoved = products.length - dedupedProducts.length;
+
+    return { data: dedupedProducts, duplicatesRemoved };
   } catch (err) {
     console.error('CSV parse error:', err);
     return { data: [], error: `Error parsing CSV: ${String(err)}` };

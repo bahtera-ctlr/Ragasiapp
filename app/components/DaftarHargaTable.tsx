@@ -205,6 +205,7 @@ export default function DaftarHargaTable() {
                       <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-left text-xs font-medium">Komposisi</th>
                       <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-left text-xs font-medium">Principle</th>
                       <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-right text-xs font-medium">HJR</th>
+                      <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-right text-xs font-medium">Stok</th>
                       <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-right text-xs font-medium">Diskon</th>
                       <th className="sticky top-0 z-10 bg-gray-800 px-3 py-3 text-right text-xs font-medium">Nett</th>
                     </tr>
@@ -216,13 +217,16 @@ export default function DaftarHargaTable() {
                         <td className="px-3 py-2.5 text-sm text-gray-400">{row.komposisi || '-'}</td>
                         <td className="px-3 py-2.5 text-sm text-gray-400">{row.principle || '-'}</td>
                         <td className="px-3 py-2.5 text-sm text-right">{formatRupiah(row.harga_jual_ragasi || 0)}</td>
+                        <td className={`px-3 py-2.5 text-sm text-right ${(row.stok ?? 0) <= 0 ? 'text-red-400' : 'text-gray-300'}`}>
+                          {(row.stok ?? 0).toLocaleString('id-ID')}
+                        </td>
                         <td className="px-3 py-2.5 text-sm text-right text-yellow-400">{row.rate}%</td>
                         <td className="px-3 py-2.5 text-sm text-right font-medium">{formatRupiah(row.nett)}</td>
                       </tr>
                     ))}
                     {paginatedRows.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                           Tidak ada barang yang cocok dengan filter.
                         </td>
                       </tr>

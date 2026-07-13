@@ -406,11 +406,14 @@ export default function AdminKeuanganDashboard() {
       }
 
       const uploadResult = await uploadStagingProducts(parseResult.data);
-      
+
       if (uploadResult.error) {
         setUploadError(uploadResult.error);
       } else {
-        setUploadSuccess(`✓ Berhasil upload ${parseResult.data.length} produk!`);
+        const dupNote = parseResult.duplicatesRemoved
+          ? ` (${parseResult.duplicatesRemoved} baris NB duplikat di file digabung otomatis)`
+          : '';
+        setUploadSuccess(`✓ Berhasil upload ${parseResult.data.length} produk!${dupNote}`);
         setTimeout(() => {
           fetchStagingProducts();
         }, 500);
@@ -1300,7 +1303,7 @@ Generated: ${new Date().toLocaleString('id-ID')}
                 <p className="text-sm text-gray-400 mb-6">
                   Format CSV: NB, GOL, PRO, POIN, Nama Barang, Komposisi, Principle, Sat, HJR, Stok, SAT, ISI<br/>
                   <span className="text-xs text-gray-500 mt-2 block">
-                    NB = Nomor Barang (wajib unik)<br/>
+                    NB = Nomor Barang (wajib unik — jika ada NB yang sama muncul lebih dari satu baris, hanya baris terakhir yang dipakai)<br/>
                     GOL = Golongan Barang<br/>
                     PRO = Program<br/>
                     POIN = Bobot Poin<br/>

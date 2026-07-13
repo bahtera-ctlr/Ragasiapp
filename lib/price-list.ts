@@ -10,10 +10,11 @@ export type PriceListProduct = {
   program: string | null;
   satuan: string | null;
   harga_jual_ragasi: number;
+  stok: number | null;
 };
 
 const PRICE_LIST_COLS =
-  'id, nomor_barang, nama_barang, principle, komposisi, golongan_barang, program, satuan, harga_jual_ragasi';
+  'id, nomor_barang, nama_barang, principle, komposisi, golongan_barang, program, satuan, harga_jual_ragasi, stok';
 
 export async function getAllPriceListProducts(): Promise<{ data?: PriceListProduct[]; error?: string }> {
   try {
