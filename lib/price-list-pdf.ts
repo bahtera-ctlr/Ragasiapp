@@ -178,6 +178,43 @@ export function generatePriceListPDF(
     });
   }
 
+  // ── SYARAT & KETENTUAN (UMUM) ────────────────────────────────
+  const staticTerms = [
+    'Kolom Nett adalah harga bersih.',
+    'Berlaku untuk pemesanan Min. 1bx (untuk kemasan Tablet / Capsul / Amp / Vial), jika kurang dari 1bx atau peritem barangnya kurang dari 50k, maka diskon yang berlaku adalah 7,5%.',
+    'Minimal Faktur Pemesanan Rp 300.000,-',
+    'Extra 2,5% adalah Diskon tambahan apabila pesanan 1 itemnya lebih dari Rp 333.000,-',
+  ];
+  {
+    const lineH = 4;
+    const blockH = 6 + staticTerms.length * lineH * 2;
+    if (y + blockH > pageHeight - 14) {
+      pdf.addPage();
+      y = margin;
+    } else {
+      y += 4;
+    }
+    setColor(...GRAY_D);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Syarat & Ketentuan', margin, y);
+    y += 4.5;
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'normal');
+    setColor(...GRAY_M);
+    staticTerms.forEach((line, i) => {
+      const wrapped = pdf.splitTextToSize(`${i + 1}. ${line}`, contentWidth);
+      wrapped.forEach((wLine: string) => {
+        if (y > pageHeight - 10) {
+          pdf.addPage();
+          y = margin;
+        }
+        pdf.text(wLine, margin, y);
+        y += lineH;
+      });
+    });
+  }
+
   const totalPages = pdf.getNumberOfPages();
   for (let p = 1; p <= totalPages; p++) {
     pdf.setPage(p);
